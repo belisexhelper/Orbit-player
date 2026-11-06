@@ -54,6 +54,8 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      - name: Prikaz grešaka kompajliranja
+        run: echo "::add-matcher::${{ github.workspace }}/.github/kotlin-matcher.json"
 
       - name: Potpisni ključ (ako je podešen)
         env:

@@ -1,0 +1,28 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "kotlin",
+      "pattern": [
+        {
+          "regexp": "^(e|w): (?:file://)?(\\S+?):(\\d+):(\\d+) (.+)$",
+          "severity": 1,
+          "file": 2,
+          "line": 3,
+          "column": 4,
+          "message": 5
+        }
+      ]
+    },
+    {
+      "owner": "aapt",
+      "pattern": [
+        {
+          "regexp": "^ERROR: ?(\\S+?):(\\d+): (AAPT: .+)$",
+          "file": 1,
+          "line": 2,
+          "message": 3
+        }
+      ]
+    }
+  ]
+}

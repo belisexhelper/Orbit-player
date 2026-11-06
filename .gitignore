@@ -10,6 +10,7 @@ android/app/build/
 android/local.properties
 android/*.jks
 android/*.keystore
+!android/debug.keystore
 .idea/
 *.iml
 .DS_Store

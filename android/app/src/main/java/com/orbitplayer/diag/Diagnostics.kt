@@ -90,7 +90,7 @@ object Diagnostics {
         list.forEach { checks.put(JSONObject().put("title", it.title).put("value", it.value).put("ok", it.ok ?: JSONObject.NULL)) }
         json.put("checks", checks)
         if (includeSpeedTest) {
-            val st = SpeedTest.run(durationMs = 8_000) {}
+            val st = SpeedTest.run(durationMs = 8_000) { _, _ -> }
             json.put("speedtest", JSONObject().put("downloadMbps", st.downloadMbps).put("pingMs", st.pingMs).put("jitterMs", st.jitterMs).put("error", st.error))
         }
         val apps = JSONArray()

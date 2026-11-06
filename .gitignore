@@ -1,6 +1,7 @@
 node_modules/
 dist/
-data/
+/backend/data/
+/data/
 .env
 *.log
 # Android

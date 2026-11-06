@@ -162,7 +162,7 @@ class KioskManager(private val context: Context, private val prefs: Prefs) {
             }
             // dozvoljene aplikacije u Lock Task modu
             val pkgs = (listOf(context.packageName) + cfg.allowedApps.map { it.pkg }).distinct().toTypedArray()
-            dpm.setLockTaskPackages(admin, if (active) pkgs else emptyArray())
+            dpm.setLockTaskPackages(admin, if (active) pkgs else emptyArray<String>())
             if (Build.VERSION.SDK_INT >= 28) {
                 dpm.setLockTaskFeatures(admin, if (active) DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS else DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
             }

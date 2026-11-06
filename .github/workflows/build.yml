@@ -39,12 +39,12 @@ jobs:
             echo "::warning::ORBIT_KEYSTORE_BASE64 nije podešen — APK je potpisan test ključem."
           fi
 
-      - name: APK (pro i lite)
+      - name: APK (pro)
         env:
           ORBIT_KEYSTORE_PASSWORD: ${{ secrets.ORBIT_KEYSTORE_PASSWORD }}
           ORBIT_KEY_ALIAS: ${{ secrets.ORBIT_KEY_ALIAS }}
           ORBIT_KEY_PASSWORD: ${{ secrets.ORBIT_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon assembleProRelease assembleLiteRelease
+        run: ./gradlew --no-daemon assembleProRelease
 
       - name: Imenovanje fajlova
         run: |

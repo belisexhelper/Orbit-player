@@ -10,6 +10,7 @@ plugins {
 
 // Verzija: versionName se menja ručno, versionCode daje CI (broj builda)
 val appVersionName = "0.1.0"
+val defaultServerUrl = "https://tvojdomen.com"
 val appVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
 
 // Potpis za release: iz promenljivih okruženja (GitHub Secrets) ili keystore.properties
@@ -30,8 +31,9 @@ android {
         versionCode = appVersionCode
         versionName = appVersionName
         vectorDrawables.useSupportLibrary = true
-        // Adresa servera (sajt + panel). Promeni pre prvog builda ili postavi ORBIT_SERVER_URL u CI.
-        buildConfigField("String", "SERVER_URL", "\"${System.getenv("ORBIT_SERVER_URL") ?: "https://tvojdomen.com"}\"")
+        // Adresa servera (sajt + panel). Menja se ovde ili promenljivom ORBIT_SERVER_URL u GitHub Actions.
+        val serverUrl = System.getenv("ORBIT_SERVER_URL")?.takeIf { it.isNotBlank() } ?: defaultServerUrl
+        buildConfigField("String", "SERVER_URL", "\"$serverUrl\"")
         buildConfigField("String", "APP_NAME", "\"Orbit Player\"")
     }
 

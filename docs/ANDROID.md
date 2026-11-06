@@ -15,17 +15,11 @@ Oba izdanja imaju TV interfejs (daljinski) i interfejs za telefon/tablet; aplika
 
 ## Kako nastaje APK
 
-Svaki `git push` na `main` pokreće GitHub Actions (`.github/workflows/build.yml`), koji pravi četiri fajla:
+Svaki `git push` na `main` pokreće GitHub Actions (`.github/workflows/build.yml`), koji pravi `orbit-pro-0.1.0-<broj>.apk` i `orbit-lite-0.1.0-<broj>.apk`. Poslednji build je u **Releases → latest-build**. `<broj>` je `versionCode` koji se unosi u panelu pri objavi.
 
-- `orbit-pro-0.1.0-<broj>.apk` i `orbit-lite-0.1.0-<broj>.apk` — release
-- isti sa `-debug` na kraju — za testiranje
+### Adresa servera
 
-Preuzimaju se na GitHub-u: **Actions → poslednji build → Artifacts**. `<broj>` je `versionCode` koji unosiš u panelu pri objavi.
-
-### Pre prvog builda: adresa servera
-
-GitHub → repozitorijum → **Settings → Secrets and variables → Actions → Variables → New variable**:
-`ORBIT_SERVER_URL` = `https://tvojdomen.com`
+Podrazumevana adresa je u `android/app/build.gradle.kts` (`SERVER_URL`). Može se promeniti i bez izmene koda: GitHub → **Settings → Secrets and variables → Actions → Variables**, promenljiva `ORBIT_SERVER_URL` = `https://tvojdomen.com`.
 
 ### Potpisni ključ (obavezno pre prve prave objave)
 
@@ -45,12 +39,12 @@ Na GitHub-u, u **Settings → Secrets and variables → Actions → Secrets**, d
 | `ORBIT_KEY_ALIAS` | `orbit` |
 | `ORBIT_KEY_PASSWORD` | lozinka ključa |
 
-Dok ključ nije podešen, release je potpisan debug ključem iz repozitorijuma — to je samo za testiranje.
+Dok ključ nije podešen, APK je potpisan test ključem iz repozitorijuma — to je samo za testiranje.
 
 ## Objava nove verzije
 
 1. Promeni `appVersionName` u `android/app/build.gradle.kts` (npr. `0.2.0`) i pošalji izmenu na GitHub.
-2. Preuzmi `orbit-pro-0.2.0-<broj>.apk` iz Actions.
+2. Preuzmi `orbit-pro-0.2.0-<broj>.apk` iz Releases → latest-build.
 3. Admin panel → **Verzije aplikacije → Objavi novu verziju**: izdanje Pro, naziv `0.2.0`, kod `<broj>`.
 4. Po želji prvo pusti na 10–20% uređaja („Postepeno puštanje”), pa povećaj na 100%.
 

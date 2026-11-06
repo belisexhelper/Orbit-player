@@ -1,43 +1,14 @@
-name: Build
+name: Android
 
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  backend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-
-  web:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci
-      - run: npm run build
-
   android:
     runs-on: ubuntu-latest
     defaults:
@@ -45,7 +16,7 @@ jobs:
         working-directory: android
     env:
       VERSION_CODE: ${{ github.run_number }}
-      # Adresa servera se podešava u GitHub → Settings → Secrets and variables → Actions → Variables
+      # Adresa servera: GitHub → Settings → Secrets and variables → Actions → Variables (ili podrazumevana u build.gradle.kts)
       ORBIT_SERVER_URL: ${{ vars.ORBIT_SERVER_URL }}
     steps:
       - uses: actions/checkout@v4
@@ -65,15 +36,10 @@ jobs:
             echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
             echo "ORBIT_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
           else
-            echo "::warning::ORBIT_KEYSTORE_BASE64 nije podešen — release APK je potpisan debug ključem (samo za testiranje)."
+            echo "::warning::ORBIT_KEYSTORE_BASE64 nije podešen — APK je potpisan test ključem."
           fi
 
-      - name: Debug APK (pro i lite)
-        run: ./gradlew --no-daemon assembleProDebug assembleLiteDebug
-
-      - name: Release APK (pro i lite)
-        id: release
-        continue-on-error: true
+      - name: APK (pro i lite)
         env:
           ORBIT_KEYSTORE_PASSWORD: ${{ secrets.ORBIT_KEYSTORE_PASSWORD }}
           ORBIT_KEY_ALIAS: ${{ secrets.ORBIT_KEY_ALIAS }}
@@ -83,12 +49,11 @@ jobs:
       - name: Imenovanje fajlova
         run: |
           VERSION=$(grep -oP 'val appVersionName = "\K[^"]+' app/build.gradle.kts)
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           mkdir -p out
           for f in $(find app/build/outputs/apk -name "*.apk"); do
             flavor=$(echo "$f" | grep -oE '/(pro|lite)/' | tr -d '/')
-            type=$(echo "$f" | grep -oE '/(debug|release)/' | tr -d '/')
-            suffix=""; [ "$type" = "debug" ] && suffix="-debug"
-            cp "$f" "out/orbit-${flavor}-${VERSION}-${VERSION_CODE}${suffix}.apk"
+            cp "$f" "out/orbit-${flavor}-${VERSION}-${VERSION_CODE}.apk"
           done
           ls -la out
 
@@ -97,3 +62,13 @@ jobs:
           name: apk-${{ github.run_number }}
           path: android/out/*.apk
           if-no-files-found: error
+
+      # Poslednji build je uvek dostupan kao „latest-build” u Releases
+      - name: Objava poslednjeg builda
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest-build --cleanup-tag -y || true
+          gh release create latest-build out/*.apk --prerelease \
+            --title "Build ${VERSION_CODE} (${APP_VERSION})" \
+            --notes "Automatski build iz commit-a ${GITHUB_SHA::7}."

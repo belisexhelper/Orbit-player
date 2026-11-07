@@ -292,10 +292,10 @@ fun TvChannelRow(
         focusRequester = focusRequester,
     ) { focused ->
         Row(Modifier.height(58.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (showNumber) Text("${ch.num}", Modifier.width(48.dp), color = if (playing) c.accent else c.textMuted, style = MaterialTheme.typography.bodyMedium)
+            if (showNumber) Text("${ch.num}", Modifier.width(40.dp), color = if (playing) c.accent else c.textMuted, style = MaterialTheme.typography.bodyMedium)
             ChannelLogo(ch.logo, ch.name, 68.dp, 40.dp)
             Spacer(Modifier.width(14.dp))
-            Row(Modifier.weight(0.9f), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1.15f), verticalAlignment = Alignment.CenterVertically) {
                 Text(name, color = c.text, style = MaterialTheme.typography.bodyLarge, fontWeight = if (playing || focused) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (playing) Icon(Icons.Filled.PlayArrow, null, Modifier.padding(start = 6.dp).size(18.dp), tint = c.accent)
                 if (favorite) Icon(Icons.Filled.Star, null, Modifier.padding(start = 6.dp).size(16.dp), tint = c.accentAlt)
@@ -303,7 +303,7 @@ fun TvChannelRow(
             }
             Spacer(Modifier.width(16.dp))
             val p = nn?.now
-            Column(Modifier.weight(1.2f)) {
+            Column(Modifier.weight(1.1f)) {
                 Text(p?.title ?: "", color = if (focused) c.text else c.text.copy(alpha = 0.9f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (p != null) ProgressLine(progressOf(p), Modifier.fillMaxWidth().padding(top = 6.dp), height = 3.dp)
             }
@@ -311,7 +311,7 @@ fun TvChannelRow(
             val n = nn?.next
             Text(
                 if (n != null) "${Fmt.time(n.start)}  ${n.title}" else "",
-                Modifier.weight(0.9f),
+                Modifier.weight(0.75f),
                 color = c.textMuted,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,

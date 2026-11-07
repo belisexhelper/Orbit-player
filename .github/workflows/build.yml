@@ -78,3 +78,14 @@ jobs:
           name: screenshots-${{ github.run_number }}
           path: android/app/build/outputs/roborazzi/*.png
           if-no-files-found: ignore
+
+      - name: Publish screenshots
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls app/build/outputs/roborazzi/*.png || exit 0
+          gh release delete screenshots --cleanup-tag -y || true
+          gh release create screenshots app/build/outputs/roborazzi/*.png --prerelease \
+            --title "Screenshots ${VERSION_CODE}" --notes "Rendered with test data from commit ${GITHUB_SHA::7}."

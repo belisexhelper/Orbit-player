@@ -1,5 +1,13 @@
 package com.orbitplayer.ui.common
 
+import com.orbitplayer.ui.components.OrbitButton
+import com.orbitplayer.ui.components.ProgressLine
+import com.orbitplayer.core.Updater
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.SystemUpdate
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -92,7 +100,7 @@ val SECTIONS = listOf(
     SettingsSection("startup", "Start-up", Icons.Filled.PowerSettingsNew, tvOnly = true),
     SettingsSection("backup", "Backup & restore", Icons.Filled.Backup),
     SettingsSection("tools", "Speed test & diagnostics", Icons.Filled.Build),
-    SettingsSection("about", "About", Icons.Filled.Info),
+    SettingsSection("about", "Updates & about", Icons.Filled.SystemUpdate),
 )
 
 /** TV: sections on the left, options on the right. Phone: grid of sections. */
@@ -277,16 +285,79 @@ fun SectionContent(vm: AppViewModel, id: String) {
                     }
                 }
             }
-            "about" -> item {
+            "about" -> {
+                item { UpdateCard(vm) }
+                item { ToggleRow("Check for updates automatically", s.autoUpdateCheck, "At start-up, at most twice a day") { v -> set { it.copy(autoUpdateCheck = v) } } }
+                item { AboutText(tv) }
+            }
+        }
+    }
+    choice?.let { ch -> ChoiceDialog(ch.title, ch.options, ch.selected, { choice = null }) { ch.onPick(it) } }
+}
+
+@Composable
+private fun AboutText(tv: Boolean) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Orbit Player ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", color = Orbit.colors.text, style = MaterialTheme.typography.titleMedium)
                     Text("Orbit Player is a media player. It does not provide or include any channels, movies or other content. Add the playlist you received from your provider.", color = Orbit.colors.textMuted, style = MaterialTheme.typography.bodyMedium)
                     Text("Interface: ${if (tv) "TV (remote control)" else "Phone / tablet (touch)"}", color = Orbit.colors.textMuted, style = MaterialTheme.typography.bodySmall)
                 }
+}
+
+/** Check for a newer build on GitHub, download it and hand it to the Android installer */
+@Composable
+private fun UpdateCard(vm: AppViewModel) {
+    val c = Orbit.colors
+    val updater = vm.app.updater
+    val state by updater.state.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val first = remember { FocusRequester() }
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp).background(c.surface, RoundedCornerShape(12.dp)).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Installed: ${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}", color = c.text, style = MaterialTheme.typography.titleMedium)
+        when (val st = state) {
+            Updater.State.Idle -> Text("Updates come directly from the Orbit Player releases on GitHub.", color = c.textMuted)
+            Updater.State.Checking -> Text("Checking for updates…", color = c.textMuted)
+            Updater.State.UpToDate -> Text("You have the latest version.", color = c.success)
+            is Updater.State.Available -> ReleaseInfo(st.release)
+            is Updater.State.Downloading -> {
+                ReleaseInfo(st.release)
+                Text("Downloading… ${(st.progress * 100).toInt()}%", color = c.text)
+                ProgressLine(st.progress, Modifier.fillMaxWidth(), height = 6.dp)
+            }
+            is Updater.State.Ready -> {
+                ReleaseInfo(st.release)
+                Text("Downloaded. Press Install and confirm in the Android window. If Android asks, allow installing apps from Orbit Player, then press Install again.", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
+            }
+            is Updater.State.Error -> Text(st.message, color = c.live)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            when (val st = state) {
+                is Updater.State.Available -> OrbitButton("Download and install (${Fmt.bytes(st.release.size)})", icon = Icons.Filled.Download, primary = true, focusRequester = first) { updater.download(st.release) }
+                is Updater.State.Downloading -> OrbitButton("Cancel", focusRequester = first) { updater.cancel() }
+                is Updater.State.Ready -> OrbitButton("Install", icon = Icons.Filled.SystemUpdate, primary = true, focusRequester = first) {
+                    vm.closePlayer(stop = true)
+                    updater.install(context, st.file)
+                }
+                is Updater.State.Error -> OrbitButton(if (st.release != null) "Try again" else "Check again", icon = Icons.Filled.Refresh, primary = true, focusRequester = first) {
+                    if (st.release != null) updater.download(st.release) else scope.launch { updater.check() }
+                }
+                Updater.State.Checking -> OrbitButton("Checking…", enabled = false, focusRequester = first) {}
+                else -> OrbitButton("Check for updates", icon = Icons.Filled.Refresh, primary = true, focusRequester = first) { scope.launch { updater.check() } }
             }
         }
     }
-    choice?.let { ch -> ChoiceDialog(ch.title, ch.options, ch.selected, { choice = null }) { ch.onPick(it) } }
+}
+
+@Composable
+private fun ReleaseInfo(r: Updater.Release) {
+    val c = Orbit.colors
+    Text("New version: ${r.versionName} · build ${r.versionCode}" + if (r.date.isNotBlank()) " · ${r.date}" else "", color = c.accent, style = MaterialTheme.typography.titleSmall)
+    val notes = r.notes.lines().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("Automatic build") }.take(10)
+    if (notes.isNotEmpty()) Text(notes.joinToString("\n"), color = c.textMuted, style = MaterialTheme.typography.bodySmall)
 }
 
 data class ChoiceSpec(val title: String, val options: List<Pair<String, String>>, val selected: String, val onPick: (String) -> Unit)

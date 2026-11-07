@@ -62,10 +62,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # release notes = the commit message (shown in the app's update screen)
+          git log -1 --pretty=%B | grep -v -e '^Co-Authored-By' -e '^Claude-Session' > "$RUNNER_TEMP/notes.txt"
+          echo "Build ${VERSION_CODE}, commit ${GITHUB_SHA::7}." >> "$RUNNER_TEMP/notes.txt"
           gh release delete latest-build --cleanup-tag -y || true
-          gh release create latest-build out/*.apk --prerelease \
+          gh release create latest-build out/*.apk \
             --title "Build ${VERSION_CODE} (${APP_VERSION})" \
-            --notes "Automatic build from commit ${GITHUB_SHA::7}."
+            --notes-file "$RUNNER_TEMP/notes.txt"
 
       # Screenshots of the main screens (TV and phone) rendered with test data
       - name: Screenshots

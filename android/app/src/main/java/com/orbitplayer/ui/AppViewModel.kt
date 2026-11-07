@@ -443,6 +443,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------- start-up ----------
     fun startup() = viewModelScope.launch {
+        launch {
+            if (settings.value.autoUpdateCheck) {
+                app.updater.checkIfDue()?.let { r -> toast("New version available (build ${r.versionCode}). Open Settings → Updates & about.") }
+            }
+        }
         repo.syncAll()
         app.downloads.refresh()
     }

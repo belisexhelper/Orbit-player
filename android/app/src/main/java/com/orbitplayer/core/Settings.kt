@@ -41,6 +41,7 @@ data class AppSettings(
     // Startup
     val startOnLastChannel: Boolean = true,
     val autostartOnBoot: Boolean = false,
+    val autoUpdateCheck: Boolean = true,
     val confirmExit: Boolean = true,
 ) {
     val bufferMs: Int
@@ -62,7 +63,7 @@ data class AppSettings(
         .put("subtitleSize", subtitleSize).put("subtitleBackground", subtitleBackground)
         .put("parentalPin", parentalPin).put("hideAdult", hideAdult).put("adultKeywords", adultKeywords)
         .put("playlistRefreshHours", playlistRefreshHours).put("epgRefreshHours", epgRefreshHours).put("epgPastDays", epgPastDays)
-        .put("startOnLastChannel", startOnLastChannel).put("autostartOnBoot", autostartOnBoot).put("confirmExit", confirmExit)
+        .put("startOnLastChannel", startOnLastChannel).put("autostartOnBoot", autostartOnBoot).put("confirmExit", confirmExit).put("autoUpdateCheck", autoUpdateCheck)
 
     companion object {
         fun fromJson(o: JSONObject, defaults: AppSettings = AppSettings()): AppSettings = defaults.copy(
@@ -92,6 +93,7 @@ data class AppSettings(
             startOnLastChannel = o.optBoolean("startOnLastChannel", defaults.startOnLastChannel),
             autostartOnBoot = o.optBoolean("autostartOnBoot", defaults.autostartOnBoot),
             confirmExit = o.optBoolean("confirmExit", defaults.confirmExit),
+            autoUpdateCheck = o.optBoolean("autoUpdateCheck", defaults.autoUpdateCheck),
         )
     }
 }

@@ -19,6 +19,7 @@ class App : Application() {
     lateinit var repo: ContentRepository; private set
     lateinit var playback: PlaybackManager; private set
     lateinit var downloads: Downloads; private set
+    lateinit var updater: com.orbitplayer.core.Updater; private set
 
     override fun onCreate() {
         super.onCreate()
@@ -27,5 +28,6 @@ class App : Application() {
         repo = ContentRepository(this, db, store)
         playback = PlaybackManager(this, store, repo)
         downloads = Downloads(this, db)
+        updater = com.orbitplayer.core.Updater(this, appScope)
     }
 }

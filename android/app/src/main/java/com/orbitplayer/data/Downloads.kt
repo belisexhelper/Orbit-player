@@ -1,4 +1,4 @@
-package com.orbitplayer.download
+package com.orbitplayer.data
 
 import android.app.DownloadManager
 import android.content.Context
@@ -35,7 +35,7 @@ class Downloads(private val context: Context, private val db: AppDatabase) {
         val file = File(folder(), name)
         val req = DownloadManager.Request(Uri.parse(url))
             .setTitle(title)
-            .setDescription("Preuzimanje za gledanje bez interneta")
+            .setDescription("Downloading for offline viewing")
             .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "Orbit/$name")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .addRequestHeader("User-Agent", Net.USER_AGENT)
@@ -54,7 +54,7 @@ class Downloads(private val context: Context, private val db: AppDatabase) {
             val c = dm.query(DownloadManager.Query().setFilterById(d.systemId)) ?: continue
             c.use { cur ->
                 if (!cur.moveToFirst()) {
-                    db.downloads().update(d.copy(status = "failed", error = "Preuzimanje je otkazano"))
+                    db.downloads().update(d.copy(status = "failed", error = "Download was cancelled"))
                     return@use
                 }
                 val st = cur.getInt(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
@@ -68,7 +68,7 @@ class Downloads(private val context: Context, private val db: AppDatabase) {
                     DownloadManager.STATUS_PENDING -> "queued"
                     else -> "running"
                 }
-                val err = if (status == "failed") "Greška $reason" else ""
+                val err = if (status == "failed") "Error $reason" else ""
                 db.downloads().update(d.copy(status = status, sizeBytes = total.coerceAtLeast(0), downloadedBytes = done.coerceAtLeast(0), error = err))
             }
         }
@@ -84,19 +84,19 @@ class Downloads(private val context: Context, private val db: AppDatabase) {
 
     /** Dodaje prevod (SRT/VTT/ASS) iz fajla ili sa adrese preuzetom videu */
     suspend fun addSubtitle(id: Long, source: Uri?, url: String?, language: String): File = withContext(Dispatchers.IO) {
-        val d = db.downloads().get(id) ?: throw IOException("Preuzimanje nije pronađeno")
+        val d = db.downloads().get(id) ?: throw IOException("Download not found")
         val ext = guessSubExt(source?.lastPathSegment ?: url ?: "")
         val base = File(d.filePath).nameWithoutExtension
         val target = File(folder(), "$base.${language.ifBlank { "sub" }}.${System.currentTimeMillis() % 1000}.$ext")
         if (source != null) {
             context.contentResolver.openInputStream(source)?.use { input -> target.outputStream().use { input.copyTo(it) } }
-                ?: throw IOException("Fajl nije moguće otvoriti")
+                ?: throw IOException("The file cannot be opened")
         } else if (!url.isNullOrBlank()) {
             Net.iptv.newCall(Request.Builder().url(url).build()).execute().use { res ->
-                if (!res.isSuccessful) throw IOException("Prevod nije dostupan (HTTP ${res.code})")
+                if (!res.isSuccessful) throw IOException("Subtitle is not available (HTTP ${res.code})")
                 target.outputStream().use { out -> res.body!!.byteStream().copyTo(out) }
             }
-        } else throw IOException("Izaberite fajl ili unesite adresu prevoda")
+        } else throw IOException("Choose a file or enter the subtitle address")
         val paths = (d.subtitlePaths.lines().filter { it.isNotBlank() } + target.absolutePath).joinToString("\n")
         db.downloads().update(d.copy(subtitlePaths = paths))
         AppLog.d("Prevod dodat: ${target.name}")

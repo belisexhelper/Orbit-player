@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Orbit Player</string>
-    <string name="device_admin_description">Omogućava zaključavanje uređaja u kiosk mod i upravljanje iz admin panela.</string>
 </resources>

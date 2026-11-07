@@ -1,19 +1,23 @@
-# Orbit Player — Android aplikacija
+# Orbit Player
 
-IPTV plejer za Android TV, TV boksove, telefone i tablete. „Orbit Player” je radno ime.
+IPTV player for Android TV and phones/tablets. One app, two layouts:
 
-| Izdanje | Paket | Namena |
-| --- | --- | --- |
-| **Pro** | `com.orbitplayer.pro` | Preuzima se sa sopstvenog sajta: povezivanje kodom, admin panel, launcher i kiosk, samoažuriranje |
-| **Lite** | `com.orbitplayer.lite` | Za Google Play: samo plejer, liste se unose ručno |
+- **TV** – side menu, channel list with groups, full-screen player with quick channel list, TV guide grid, catch-up, movies and series.
+- **Phone / tablet** – home screen with tiles, live channels with mini player, TV guide, movies, series, offline downloads, picture-in-picture.
 
-Server, sajt i admin panel nisu u ovom repozitorijumu.
+Orbit Player does not provide any content. Users add their own Xtream Codes account or M3U playlist.
+
+## Features
+
+- Xtream Codes and M3U (address or file), XMLTV guide
+- Favorites, recently watched, hidden groups/channels, parental PIN
+- Catch-up (archive) from the guide
+- Movies and series with resume, "continue watching", subtitles (built-in, from file or from a URL)
+- Offline downloads with subtitles (phone/tablet)
+- Speed test and diagnostics
+- Backup and restore of settings and playlists
 
 ## Build
 
-Svaki push na `main` pokreće GitHub Actions i pravi `orbit-pro-<verzija>-<broj>.apk` i `orbit-lite-<verzija>-<broj>.apk`. Poslednji build je uvek u **Releases → latest-build**.
-
-## Uputstva
-
-- [docs/ANDROID.md](docs/ANDROID.md) — potpisni ključ, adresa servera, objava novih verzija, prečice na TV-u
-- [docs/KIOSK.md](docs/KIOSK.md) — launcher i kiosk mod (nivoi 1–3), ADB komande
+Builds run on GitHub Actions (`.github/workflows/build.yml`). The newest APK is always attached to the
+`latest-build` release. See [docs/BUILD.md](docs/BUILD.md) for local builds and release signing.

@@ -37,10 +37,10 @@ abstract class AppDatabase : RoomDatabase() {
 
 @Dao
 interface PlaylistDao {
-    @Query("SELECT * FROM playlists ORDER BY source DESC, sort, name")
+    @Query("SELECT * FROM playlists ORDER BY sort, name")
     fun observeAll(): Flow<List<PlaylistEntity>>
 
-    @Query("SELECT * FROM playlists ORDER BY source DESC, sort, name")
+    @Query("SELECT * FROM playlists ORDER BY sort, name")
     suspend fun all(): List<PlaylistEntity>
 
     @Query("SELECT * FROM playlists WHERE id = :id")
@@ -58,15 +58,24 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET lastEpgAt = :at WHERE id = :id")
     suspend fun markEpg(id: String, at: Long)
 
-    @Query("UPDATE playlists SET serverTimezone = :tz WHERE id = :id")
-    suspend fun setTimezone(id: String, tz: String)
+    @Query("UPDATE playlists SET serverTimezone = :tz, expiresAt = :expiresAt, maxConnections = :maxConn, accountStatus = :status WHERE id = :id")
+    suspend fun setAccount(id: String, tz: String, expiresAt: Long, maxConn: Int, status: String)
+
+    @Query("UPDATE playlists SET liveCount = :live, vodCount = :vod, seriesCount = :series WHERE id = :id")
+    suspend fun setCounts(id: String, live: Int, vod: Int, series: Int)
+
+    @Query("UPDATE playlists SET epgUrl = :url WHERE id = :id AND epgUrl = ''")
+    suspend fun setEpgIfEmpty(id: String, url: String)
 }
 
 @Dao
 interface ContentDao {
-    // ---------- kategorije ----------
+    // ---------- categories ----------
     @Query("SELECT * FROM categories WHERE playlistId = :pid AND kind = :kind ORDER BY sort")
     fun observeCategories(pid: String, kind: String): Flow<List<CategoryEntity>>
+
+    @Query("SELECT * FROM categories WHERE playlistId = :pid AND kind = :kind ORDER BY sort")
+    suspend fun categories(pid: String, kind: String): List<CategoryEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCategories(items: List<CategoryEntity>)
@@ -74,7 +83,7 @@ interface ContentDao {
     @Query("DELETE FROM categories WHERE playlistId = :pid AND kind = :kind")
     suspend fun clearCategories(pid: String, kind: String)
 
-    // ---------- kanali ----------
+    // ---------- channels ----------
     @Query("SELECT * FROM channels WHERE playlistId = :pid ORDER BY num, name")
     fun observeChannels(pid: String): Flow<List<ChannelEntity>>
 
@@ -83,6 +92,9 @@ interface ContentDao {
 
     @Query("SELECT * FROM channels WHERE `key` = :key")
     suspend fun channel(key: String): ChannelEntity?
+
+    @Query("SELECT * FROM channels WHERE `key` IN (:keys)")
+    suspend fun channelsByKeys(keys: List<String>): List<ChannelEntity>
 
     @Query("SELECT * FROM channels WHERE playlistId = :pid AND num = :num LIMIT 1")
     suspend fun channelByNumber(pid: String, num: Int): ChannelEntity?
@@ -96,21 +108,30 @@ interface ContentDao {
     @Query("SELECT DISTINCT epgKey FROM channels WHERE playlistId = :pid AND epgKey != ''")
     suspend fun epgKeys(pid: String): List<String>
 
+    @Query("SELECT * FROM channels WHERE epgKey = :epgKey LIMIT 1")
+    suspend fun channelByEpgKey(epgKey: String): ChannelEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChannels(items: List<ChannelEntity>)
 
     @Query("DELETE FROM channels WHERE playlistId = :pid")
     suspend fun clearChannels(pid: String)
 
-    // ---------- filmovi ----------
+    // ---------- movies ----------
     @Query("SELECT * FROM vod WHERE playlistId = :pid AND (:cat = '' OR categoryId = :cat) ORDER BY added DESC, name LIMIT :limit")
     fun observeVod(pid: String, cat: String, limit: Int): Flow<List<VodEntity>>
 
-    @Query("SELECT * FROM vod WHERE playlistId = :pid AND name LIKE :q ORDER BY name LIMIT 200")
+    @Query("SELECT * FROM vod WHERE playlistId = :pid AND (:cat = '' OR categoryId = :cat) ORDER BY name COLLATE NOCASE LIMIT :limit")
+    fun observeVodByName(pid: String, cat: String, limit: Int): Flow<List<VodEntity>>
+
+    @Query("SELECT * FROM vod WHERE playlistId = :pid AND name LIKE :q ORDER BY name LIMIT 100")
     suspend fun searchVod(pid: String, q: String): List<VodEntity>
 
     @Query("SELECT * FROM vod WHERE `key` = :key")
     suspend fun vod(key: String): VodEntity?
+
+    @Query("SELECT * FROM vod WHERE `key` IN (:keys)")
+    suspend fun vodByKeys(keys: List<String>): List<VodEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVod(items: List<VodEntity>)
@@ -118,15 +139,18 @@ interface ContentDao {
     @Query("DELETE FROM vod WHERE playlistId = :pid")
     suspend fun clearVod(pid: String)
 
-    // ---------- serije ----------
-    @Query("SELECT * FROM series WHERE playlistId = :pid AND (:cat = '' OR categoryId = :cat) ORDER BY name LIMIT :limit")
+    // ---------- series ----------
+    @Query("SELECT * FROM series WHERE playlistId = :pid AND (:cat = '' OR categoryId = :cat) ORDER BY name COLLATE NOCASE LIMIT :limit")
     fun observeSeries(pid: String, cat: String, limit: Int): Flow<List<SeriesEntity>>
 
-    @Query("SELECT * FROM series WHERE playlistId = :pid AND name LIKE :q ORDER BY name LIMIT 200")
+    @Query("SELECT * FROM series WHERE playlistId = :pid AND name LIKE :q ORDER BY name LIMIT 100")
     suspend fun searchSeries(pid: String, q: String): List<SeriesEntity>
 
     @Query("SELECT * FROM series WHERE `key` = :key")
     suspend fun series(key: String): SeriesEntity?
+
+    @Query("SELECT * FROM series WHERE `key` IN (:keys)")
+    suspend fun seriesByKeys(keys: List<String>): List<SeriesEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSeries(items: List<SeriesEntity>)
@@ -143,8 +167,8 @@ interface EpgDao {
     @Query("SELECT * FROM epg WHERE epgKey IN (:keys) AND stop > :from AND start < :to ORDER BY start")
     suspend fun programsFor(keys: List<String>, from: Long, to: Long): List<ProgramEntity>
 
-    @Query("SELECT * FROM epg WHERE epgKey = :key AND start <= :now AND stop > :now LIMIT 1")
-    suspend fun current(key: String, now: Long): ProgramEntity?
+    @Query("SELECT * FROM epg WHERE playlistId = :pid AND title LIKE :q AND stop > :from ORDER BY start LIMIT 60")
+    suspend fun search(pid: String, q: String, from: Long): List<ProgramEntity>
 
     @Insert
     suspend fun insert(items: List<ProgramEntity>)
@@ -152,14 +176,20 @@ interface EpgDao {
     @Query("DELETE FROM epg WHERE playlistId = :pid")
     suspend fun clear(pid: String)
 
+    @Query("DELETE FROM epg")
+    suspend fun clearAll()
+
     @Query("DELETE FROM epg WHERE stop < :before")
     suspend fun deleteOld(before: Long)
 }
 
 @Dao
 interface UserDao {
-    @Query("SELECT * FROM favorites")
+    @Query("SELECT * FROM favorites ORDER BY addedAt")
     fun observeFavorites(): Flow<List<FavoriteEntity>>
+
+    @Query("SELECT * FROM favorites")
+    suspend fun favorites(): List<FavoriteEntity>
 
     @Upsert
     suspend fun addFavorite(f: FavoriteEntity)
@@ -167,14 +197,17 @@ interface UserDao {
     @Query("DELETE FROM favorites WHERE `key` = :key")
     suspend fun removeFavorite(key: String)
 
-    @Query("SELECT * FROM progress ORDER BY updatedAt DESC LIMIT :limit")
-    fun observeProgress(limit: Int): Flow<List<ProgressEntity>>
+    @Query("SELECT * FROM progress WHERE finished = 0 ORDER BY updatedAt DESC LIMIT :limit")
+    fun observeContinue(limit: Int): Flow<List<ProgressEntity>>
+
+    @Query("SELECT * FROM progress")
+    fun observeAllProgress(): Flow<List<ProgressEntity>>
+
+    @Query("SELECT * FROM progress")
+    suspend fun allProgress(): List<ProgressEntity>
 
     @Query("SELECT * FROM progress WHERE `key` = :key")
     suspend fun progress(key: String): ProgressEntity?
-
-    @Query("SELECT * FROM progress WHERE seriesKey = :seriesKey")
-    suspend fun progressForSeries(seriesKey: String): List<ProgressEntity>
 
     @Upsert
     suspend fun saveProgress(p: ProgressEntity)

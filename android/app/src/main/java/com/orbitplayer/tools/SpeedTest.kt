@@ -1,4 +1,4 @@
-package com.orbitplayer.diag
+package com.orbitplayer.tools
 
 import com.orbitplayer.core.Net
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +41,7 @@ object SpeedTest {
             val start = System.nanoTime()
             var lastReport = start
             client.newCall(Request.Builder().url(DOWN_URL).build()).execute().use { res ->
-                val input = res.body?.byteStream() ?: error("prazan odgovor")
+                val input = res.body?.byteStream() ?: error("empty response")
                 val buf = ByteArray(64 * 1024)
                 while (true) {
                     val n = input.read(buf)
@@ -59,7 +59,7 @@ object SpeedTest {
             onProgress("done", result)
             SpeedResult(downloadMbps = result, pingMs = ping, jitterMs = jitter)
         } catch (e: Exception) {
-            SpeedResult(error = e.message ?: "Test nije uspeo")
+            SpeedResult(error = e.message ?: "Test failed")
         }
     }
 

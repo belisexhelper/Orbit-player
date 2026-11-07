@@ -1,17 +1,17 @@
-node_modules/
-dist/
-/backend/data/
-/data/
-.env
-*.log
-# Android
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
-android/*.jks
-android/*.keystore
-!android/debug.keystore
-.idea/
+# Gradle / Android Studio
+.gradle/
+build/
+/android/build/
+/android/app/build/
+/android/out/
+local.properties
 *.iml
+.idea/
 .DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Signing secrets (debug.keystore is intentionally committed)
+keystore.properties
+*.jks

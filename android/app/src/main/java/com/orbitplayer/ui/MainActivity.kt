@@ -1,178 +1,121 @@
 package com.orbitplayer.ui
 
-import android.content.Intent
+import android.app.PictureInPictureParams
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
-import android.view.KeyEvent
+import android.util.Rational
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
-import com.orbitplayer.App
-import com.orbitplayer.BuildConfig
 import com.orbitplayer.core.DeviceInfo
-import com.orbitplayer.player.PlayItem
-import com.orbitplayer.player.PlaySession
-import com.orbitplayer.server.UiEvent
-import com.orbitplayer.ui.theme.LocalIsTv
+import com.orbitplayer.ui.common.PlayerScreen
+import com.orbitplayer.ui.mobile.MobileApp
+import com.orbitplayer.ui.theme.Orbit
 import com.orbitplayer.ui.theme.OrbitTheme
+import com.orbitplayer.ui.tv.TvApp
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private val vm: MainViewModel by viewModels()
-    private val app get() = application as App
+    private val vm: AppViewModel by viewModels()
+    private val inPip = mutableStateOf(false)
     private var isTv = false
-
-    /** Poruka iz admin panela */
-    var serverMessage by mutableStateOf<String?>(null)
-    /** Dijalog za servisni PIN (izlaz iz kiosk moda) */
-    var pinDialog by mutableStateOf(false)
-
-    private var menuPresses = 0
-    private var menuFirstAt = 0L
-    private var bootHandled = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         isTv = DeviceInfo.isTv(this)
         if (!isTv) enableEdgeToEdge()
-        vm.startup()
-        setContent {
-            val s by vm.settings.collectAsState()
-            CompositionLocalProvider(LocalIsTv provides isTv) {
-                OrbitTheme(light = s.theme == "light", accentHex = vm.launcher.collectAsState().value.accent.ifBlank { s.accent }, isTv = isTv) {
-                    AppRoot(vm, this)
-                }
-            }
+        val firstStart = savedInstanceState == null
+        if (firstStart) {
+            vm.startup()
+            if (isTv && vm.settings.value.startOnLastChannel) vm.playLastChannel(fullscreen = true)
         }
+        lifecycleScope.launch { vm.messages.collect { Toast.makeText(this@MainActivity, it, Toast.LENGTH_SHORT).show() } }
+        // keep the screen on while something plays; phone full screen goes landscape and hides system bars
         lifecycleScope.launch {
-            app.sync.events.collect { e -> handleEvent(e) }
+            combine(vm.playerOpen, vm.playback.playing) { open, playing -> open to playing }.collect { (open, playing) ->
+                if (playing) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                if (!isTv) setFullscreen(open)
+            }
         }
-        handleBootTarget(intent)
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        // pritisak na Home dok je aplikacija launcher: vrati na početni ekran
-        if (intent.hasCategory(Intent.CATEGORY_HOME)) vm.root(Screen.Home)
-    }
-
-    override fun onResume() {
-        super.onResume()
-        app.sync.screen = vm.current.javaClass.simpleName.lowercase()
-        app.kiosk.isSuspended()
-        app.kiosk.applyComponents()
-        app.kiosk.enterKiosk(this)
-        lifecycleScope.launch { app.downloads.refresh() }
-    }
-
-    private fun handleEvent(e: UiEvent) {
-        when (e) {
-            is UiEvent.Message -> {
-                serverMessage = e.text
-                if (e.durationSec > 0) lifecycleScope.launch {
-                    kotlinx.coroutines.delay(e.durationSec * 1000L)
-                    if (serverMessage == e.text) serverMessage = null
+        setContent {
+            val settings by vm.settings.collectAsState()
+            val playerOpen by vm.playerOpen.collectAsState()
+            OrbitTheme(settings.theme, isTv, settings.fontScale) {
+                Box(Modifier.fillMaxSize().background(Orbit.colors.background)) {
+                    if (inPip.value) {
+                        PlayerScreen(vm, inPip = true)
+                    } else {
+                        if (isTv) TvApp(vm, onExit = { finish() }) else MobileApp(vm, onExit = { finish() })
+                        if (playerOpen) PlayerScreen(vm, inPip = false, onEnterPip = { enterPip() })
+                    }
                 }
             }
-            is UiEvent.PlayChannel -> lifecycleScope.launch {
-                val pid = app.prefs.activePlaylistId
-                val ch = when {
-                    e.number != null -> app.db.content().channelByNumber(pid, e.number)
-                    e.name != null -> app.db.content().channelByName(pid, "%${e.name}%")
-                    else -> null
-                }
-                if (ch != null) vm.playChannel(vm.live.value.channels.ifEmpty { listOf(ch) }, ch)
-            }
-            is UiEvent.OpenApp -> openApp(e.pkg)
-            is UiEvent.GoHome -> vm.root(Screen.Home)
-            is UiEvent.Unpaired -> vm.root(Screen.Home)
-            is UiEvent.Toast -> Toast.makeText(this, e.text, Toast.LENGTH_LONG).show()
         }
     }
 
-    fun openApp(pkg: String) {
-        val pm = packageManager
-        val i = pm.getLeanbackLaunchIntentForPackage(pkg) ?: pm.getLaunchIntentForPackage(pkg)
-        if (i == null) {
-            Toast.makeText(this, "Aplikacija nije instalirana", Toast.LENGTH_SHORT).show()
-            return
-        }
-        runCatching { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-    }
-
-    /** Pri paljenju ili prvom otvaranju launchera: otvori ono što je admin podesio */
-    private fun handleBootTarget(intent: Intent?) {
-        if (bootHandled) return
-        bootHandled = true
-        val fromBoot = intent?.getBooleanExtra(EXTRA_FROM_BOOT, false) == true
-        val asHome = intent?.hasCategory(Intent.CATEGORY_HOME) == true
-        val launcherTarget = if (app.kiosk.launcherActive()) app.kiosk.config.value.bootTarget else ""
-        val target = when {
-            launcherTarget.isNotBlank() && (fromBoot || asHome) -> launcherTarget
-            vm.settings.value.startScreen == "live" -> "live"
-            vm.settings.value.startScreen == "last_channel" -> "last_channel"
-            else -> ""
-        }
-        when (target) {
-            "" -> Unit
-            "live" -> vm.open(Screen.Live)
-            "last_channel" -> lifecycleScope.launch {
-                val ch = app.db.content().channel(app.prefs.lastChannelKey)
-                if (ch != null) {
-                    val list = app.db.content().channels(ch.playlistId)
-                    vm.playChannel(list, ch)
-                } else vm.open(Screen.Live)
-            }
-            else -> openApp(target)
+    private fun setFullscreen(on: Boolean) {
+        requestedOrientation = if (on) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        val ctl = WindowCompat.getInsetsController(window, window.decorView)
+        if (on) {
+            ctl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            ctl.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            ctl.show(WindowInsetsCompat.Type.systemBars())
         }
     }
 
-    fun playLastChannel() = lifecycleScope.launch {
-        val ch = app.db.content().channel(app.prefs.lastChannelKey) ?: return@launch
-        PlaySession.start(this@MainActivity, listOf(PlayItem(kind = "live", title = ch.name, channel = ch, poster = ch.logo, playlistId = ch.playlistId)), 0)
-    }
+    private fun canPip(): Boolean =
+        !isTv && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && packageManager.hasSystemFeature("android.software.picture_in_picture")
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        // Servisni pristup u kiosk modu: taster Meni 5 puta u 3 sekunde
-        if (BuildConfig.SERVER_ENABLED && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_MENU && app.kiosk.launcherActive()) {
-            val now = System.currentTimeMillis()
-            if (now - menuFirstAt > 3000) {
-                menuFirstAt = now
-                menuPresses = 0
-            }
-            menuPresses++
-            if (menuPresses >= 5) {
-                menuPresses = 0
-                pinDialog = true
-                return true
+    fun enterPip() {
+        if (!canPip() || vm.playback.item.value == null) return
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build())
             }
         }
-        return super.dispatchKeyEvent(event)
     }
 
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        if (pinDialog) {
-            pinDialog = false; return
-        }
-        if (serverMessage != null) {
-            serverMessage = null; return
-        }
-        if (vm.back()) return
-        // kao launcher, „nazad” sa početnog ekrana ne izlazi iz aplikacije
-        if (app.kiosk.launcherActive()) return
-        @Suppress("DEPRECATION")
-        super.onBackPressed()
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (vm.playback.playing.value && (vm.playerOpen.value || vm.route == Route.ChannelView)) enterPip()
     }
 
-    companion object {
-        const val EXTRA_FROM_BOOT = "from_boot"
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        inPip.value = isInPictureInPictureMode
+        if (isInPictureInPictureMode) vm.playerOpen.value = true
+    }
+
+    override fun onStop() {
+        super.onStop()
+        val pip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode
+        if (!pip) {
+            vm.playback.saveProgress()
+            vm.playback.pause()
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        vm.playback.resumeIfReady()
     }
 }

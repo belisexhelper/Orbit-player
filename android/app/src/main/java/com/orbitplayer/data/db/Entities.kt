@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-/** Lista (izvor): Xtream nalog ili M3U adresa. source = "server" (sa panela/sajta) ili "local" (uneto na uređaju). */
+/** A source: Xtream Codes account or M3U address/file */
 @Entity(tableName = "playlists")
 data class PlaylistEntity(
     @PrimaryKey val id: String,
@@ -13,16 +13,21 @@ data class PlaylistEntity(
     val server: String = "",
     val username: String = "",
     val password: String = "",
-    val url: String = "",
+    val url: String = "", // M3U address or content:// / file path of a local file
     val epgUrl: String = "",
-    val source: String = "local",
+    val includeVod: Boolean = true,
+    val includeSeries: Boolean = true,
     val sort: Int = 0,
     val lastSyncAt: Long = 0,
     val lastEpgAt: Long = 0,
     val lastError: String = "",
-    /** Vremenska zona servera (Xtream server_info.timezone) — za catch-up */
     val serverTimezone: String = "",
-    val updatedAt: String = "",
+    val expiresAt: Long = 0, // 0 = unknown / never
+    val maxConnections: Int = 0,
+    val accountStatus: String = "",
+    val liveCount: Int = 0,
+    val vodCount: Int = 0,
+    val seriesCount: Int = 0,
 )
 
 @Entity(tableName = "categories", indices = [Index("playlistId", "kind")])
@@ -45,8 +50,8 @@ data class ChannelEntity(
     val name: String,
     val logo: String,
     val categoryId: String,
-    val url: String, // za M3U pun URL; za Xtream prazno (gradi se po potrebi)
-    val epgKey: String, // playlistId:tvg-id (malim slovima)
+    val url: String, // M3U: full address; Xtream: empty (built on demand)
+    val epgKey: String, // playlistId:tvg-id (lower case)
     val archive: Boolean,
     val archiveDays: Int,
     val catchupSource: String = "",
@@ -94,15 +99,15 @@ data class ProgramEntity(
 
 @Entity(tableName = "favorites")
 data class FavoriteEntity(
-    @PrimaryKey val key: String, // ključ kanala/filma/serije
-    val kind: String,
+    @PrimaryKey val key: String, // channel / movie / series key
+    val kind: String, // live | vod | series
     val addedAt: Long,
 )
 
-/** Pozicija gledanja za „nastavi gledanje” */
+/** Watch position for "Continue watching" */
 @Entity(tableName = "progress", indices = [Index("updatedAt")])
 data class ProgressEntity(
-    @PrimaryKey val key: String, // vod:<key> ili ep:<playlistId>:<episodeId>
+    @PrimaryKey val key: String, // vod:<key> or ep:<playlistId>:<episodeId>
     val kind: String, // vod | episode
     val title: String,
     val poster: String,
@@ -112,6 +117,7 @@ data class ProgressEntity(
     val updatedAt: Long,
     val seriesKey: String = "",
     val playlistId: String = "",
+    val finished: Boolean = false,
 )
 
 @Entity(tableName = "downloads")
@@ -123,7 +129,7 @@ data class DownloadEntity(
     val poster: String,
     val sourceUrl: String,
     val filePath: String,
-    val subtitlePaths: String = "", // putanje odvojene sa \n
+    val subtitlePaths: String = "", // paths separated by \n
     val systemId: Long = -1,
     val status: String = "queued", // queued | running | done | failed | paused
     val sizeBytes: Long = 0,

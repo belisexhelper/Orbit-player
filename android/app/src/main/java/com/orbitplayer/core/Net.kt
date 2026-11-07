@@ -7,7 +7,7 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 object Net {
-    const val USER_AGENT = "OrbitPlayer/1.0 (Linux; Android)"
+    const val USER_AGENT = "OrbitPlayer/0.2 (Linux; Android)"
 
     /** Za komunikaciju sa našim serverom */
     val api: OkHttpClient = OkHttpClient.Builder()

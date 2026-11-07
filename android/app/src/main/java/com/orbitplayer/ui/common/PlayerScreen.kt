@@ -1,0 +1,853 @@
+package com.orbitplayer.ui.common
+
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.media.AudioManager
+import android.net.Uri
+import android.view.KeyEvent as AKeyEvent
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.nativeKeyCode
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.media3.common.C
+import com.orbitplayer.core.Fmt
+import com.orbitplayer.data.Downloads
+import com.orbitplayer.data.db.ChannelEntity
+import com.orbitplayer.playback.PlayItem
+import com.orbitplayer.playback.SubtitleSource
+import com.orbitplayer.ui.AppViewModel
+import com.orbitplayer.ui.NowNext
+import com.orbitplayer.ui.components.ChannelLogo
+import com.orbitplayer.ui.components.ChoiceDialog
+import com.orbitplayer.ui.components.Focusable
+import com.orbitplayer.ui.components.IconAction
+import com.orbitplayer.ui.components.ListRow
+import com.orbitplayer.ui.components.OrbitButton
+import com.orbitplayer.ui.components.Pill
+import com.orbitplayer.ui.components.ProgressLine
+import com.orbitplayer.ui.components.TextInputDialog
+import com.orbitplayer.ui.components.isOkKey
+import com.orbitplayer.ui.theme.LocalIsTv
+import com.orbitplayer.ui.theme.Orbit
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+private enum class Overlay { None, Channels, Options }
+private enum class Picker { None, Audio, Subtitles, Aspect, Sleep, SubtitleUrl }
+
+/** Full-screen player for TV and phone */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Unit = {}) {
+    val tv = LocalIsTv.current
+    val pb = vm.playback
+    val item by pb.item.collectAsState()
+    val index by pb.index.collectAsState()
+    val error by pb.error.collectAsState()
+    val buffering by pb.buffering.collectAsState()
+    val playing by pb.playing.collectAsState()
+    val ended by pb.ended.collectAsState()
+    val settings by vm.settings.collectAsState()
+    val favorites by vm.favorites.collectAsState()
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    var aspect by remember { mutableStateOf(settings.aspect) }
+    var overlay by remember { mutableStateOf(Overlay.None) }
+    var picker by remember { mutableStateOf(Picker.None) }
+    var controls by remember { mutableStateOf(false) } // phone controls / TV VOD controls
+    var banner by remember { mutableStateOf(false) }
+    var digits by remember { mutableStateOf("") }
+    var locked by remember { mutableStateOf(false) }
+    var lastInput by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var gestureLabel by remember { mutableStateOf("") }
+    val root = remember { FocusRequester() }
+    val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            pb.addSubtitle(SubtitleSource(uri.toString(), "My subtitles", "", Downloads.subtitleMime(uri.lastPathSegment ?: "")))
+        }
+    }
+
+    fun touch() {
+        lastInput = System.currentTimeMillis()
+    }
+
+    val now by produceState(System.currentTimeMillis()) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    val channel = item?.channel
+    val nowNext by produceState<NowNext?>(null, channel?.key, now / 60_000) {
+        value = channel?.let { vm.loadNowNext(listOf(it.epgKey))[it.epgKey] }
+    }
+
+    // banner on every channel change
+    LaunchedEffect(item, index) {
+        if (item?.isLive == true || item?.kind == "catchup") {
+            banner = true
+            touch()
+        }
+        if (item?.seekable == true && !tv) controls = true
+    }
+    // auto hide (TV 5 s, phone 3.5 s; banner uses the setting; not while paused or a menu is open)
+    LaunchedEffect(lastInput, banner, controls, playing, overlay) {
+        val wait = if (banner && !controls) settings.bannerSeconds * 1000L else if (tv) 5000L else 3500L
+        delay(wait)
+        if (overlay == Overlay.None && (playing || item?.isLive == true)) {
+            banner = false
+            controls = false
+        }
+    }
+    // number entry commits after 2 s
+    LaunchedEffect(digits) {
+        if (digits.isEmpty()) return@LaunchedEffect
+        delay(2000)
+        commitNumber(vm, digits)
+        digits = ""
+    }
+    LaunchedEffect(ended) { if (ended > 0) vm.closePlayer(stop = true) }
+    LaunchedEffect(overlay, picker, controls) {
+        if (overlay == Overlay.None && picker == Picker.None && !(controls && tv && item?.seekable == true)) {
+            delay(50)
+            runCatching { root.requestFocus() }
+        }
+    }
+
+    BackHandler(enabled = !inPip) {
+        when {
+            digits.isNotEmpty() -> digits = ""
+            overlay != Overlay.None -> overlay = Overlay.None
+            controls && tv -> controls = false
+            banner && tv -> banner = false
+            else -> vm.leavePlayer(tv)
+        }
+    }
+
+    val cur = item
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .focusProperties { exit = { FocusRequester.Cancel } }
+            .focusGroup(),
+    ) {
+        PlayerSurface(pb, settings, aspect, Modifier.fillMaxSize())
+        if (inPip) return@Box
+
+        // Key handling and touch layer
+        Box(
+            Modifier
+                .fillMaxSize()
+                .focusRequester(root)
+                .onPreviewKeyEvent { e ->
+                    if (overlay != Overlay.None || picker != Picker.None) return@onPreviewKeyEvent false
+                    if (controls && tv && cur?.seekable == true && e.key != Key.Back) {
+                        // VOD controls are visible: buttons handle the keys
+                        touch()
+                        return@onPreviewKeyEvent false
+                    }
+                    handleKey(e.type, e.key, e.nativeKeyEvent.repeatCount, cur, tv,
+                        onZap = { d -> pb.zap(d); banner = true; touch() },
+                        onChannels = { overlay = Overlay.Channels },
+                        onOptions = { overlay = Overlay.Options },
+                        onPrevious = { if (!pb.previousChannel()) { banner = true; touch() } },
+                        onBanner = { banner = !banner; touch() },
+                        onDigit = { d -> digits = (digits + d).take(4); touch() },
+                        onControls = { controls = true; touch() },
+                        onSeek = { ms -> pb.seekBy(ms); controls = true; touch() },
+                        onTogglePause = { pb.togglePause(); controls = true; touch() },
+                        onCommitDigits = { if (digits.isNotEmpty()) { commitNumber(vm, digits); digits = "" } },
+                        hasDigits = digits.isNotEmpty(),
+                    )
+                }
+                .focusable()
+                .then(
+                    if (!tv) Modifier
+                        .pointerInput(cur?.seekable, locked) {
+                            detectTapGestures(
+                                onTap = { if (!locked) { controls = !controls; touch() } else { controls = true; touch() } },
+                                onDoubleTap = { o ->
+                                    if (locked || cur?.seekable != true) return@detectTapGestures
+                                    val left = o.x < size.width / 2
+                                    pb.seekBy(if (left) -10_000 else 10_000)
+                                    gestureLabel = if (left) "−10 s" else "+10 s"
+                                },
+                            )
+                        }
+                        .pointerInput(cur?.seekable, locked) {
+                            gestureControls(context, this, cur?.seekable == true, { locked }, { label -> gestureLabel = label }) { ms -> pb.seekBy(ms) }
+                        }
+                    else Modifier,
+                ),
+        )
+
+        if (buffering && error == null) CircularProgressIndicator(Modifier.align(Alignment.Center).size(56.dp), color = Orbit.colors.accent)
+
+        error?.let { msg ->
+            Column(
+                Modifier.align(Alignment.Center).padding(32.dp).background(Color(0xE6161B26), RoundedCornerShape(14.dp)).padding(22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(msg, color = Color.White, style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(14.dp))
+                OrbitButton("Try again", icon = Icons.Filled.Refresh, primary = true) { pb.retry() }
+            }
+        }
+
+        if (gestureLabel.isNotEmpty()) {
+            LaunchedEffect(gestureLabel) {
+                delay(900)
+                gestureLabel = ""
+            }
+            Box(Modifier.align(Alignment.Center).background(Color(0xB3000000), RoundedCornerShape(20.dp)).padding(horizontal = 22.dp, vertical = 12.dp)) {
+                Text(gestureLabel, color = Color.White, style = MaterialTheme.typography.titleLarge)
+            }
+        }
+
+        if (digits.isNotEmpty()) {
+            Box(Modifier.align(Alignment.TopEnd).padding(32.dp).background(Color(0xE61E2533), RoundedCornerShape(12.dp)).padding(horizontal = 26.dp, vertical = 12.dp)) {
+                Text(digits, color = Color.White, fontSize = 46.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        if (cur != null) {
+            if (tv) {
+                AnimatedVisibility(banner && overlay == Overlay.None && !(controls && cur.seekable), Modifier.align(Alignment.BottomCenter), enter = fadeIn(), exit = fadeOut()) {
+                    InfoBanner(vm, cur, nowNext, pb.quality(), now, favorites)
+                }
+                if (cur.seekable && controls && overlay == Overlay.None) {
+                    TvVodControls(vm, cur, now, onTouch = ::touch, onPicker = { picker = it }, onOptions = { overlay = Overlay.Options })
+                }
+            } else {
+                AnimatedVisibility(controls || banner, Modifier.fillMaxSize(), enter = fadeIn(), exit = fadeOut()) {
+                    PhoneControls(
+                        vm, cur, nowNext, now, playing, locked,
+                        onBack = { vm.leavePlayer(false) },
+                        onLock = { locked = !locked; touch() },
+                        onPip = onEnterPip,
+                        onChannels = { overlay = Overlay.Channels },
+                        onPicker = { picker = it; touch() },
+                        onTouch = ::touch,
+                    )
+                }
+            }
+        }
+
+        // Side channel list (OK on TV, "Channels" on phone)
+        AnimatedVisibility(
+            overlay == Overlay.Channels,
+            Modifier.align(Alignment.CenterStart),
+            enter = slideInHorizontally { -it } + fadeIn(),
+            exit = slideOutHorizontally { -it } + fadeOut(),
+        ) {
+            ChannelListPanel(vm, onPick = { ch, list ->
+                overlay = Overlay.None
+                vm.playChannel(ch, list)
+            })
+        }
+
+        // Options bar (long press OK)
+        if (overlay == Overlay.Options && cur != null) {
+            OptionsBar(
+                cur, channel != null && channel.key in favorites, aspect,
+                onAction = { a ->
+                    overlay = Overlay.None
+                    when (a) {
+                        "audio" -> picker = Picker.Audio
+                        "subs" -> picker = Picker.Subtitles
+                        "aspect" -> picker = Picker.Aspect
+                        "sleep" -> picker = Picker.Sleep
+                        "fav" -> channel?.let { vm.toggleFavorite(it.key, "live") }
+                        "channels" -> overlay = Overlay.Channels
+                        "guide" -> {
+                            vm.closePlayer(stop = false)
+                            vm.root(com.orbitplayer.ui.Route.Guide)
+                        }
+                        "retry" -> pb.retry()
+                        "external" -> openExternal(context, vm, cur)
+                    }
+                },
+                onClose = { overlay = Overlay.None },
+            )
+        }
+    }
+
+    when (picker) {
+        Picker.Audio -> {
+            val v by pb.tracksVersion.collectAsState()
+            val opts = remember(v) { pb.audioTracks() }
+            if (opts.isEmpty()) {
+                LaunchedEffect(Unit) { vm.toast("This stream has only one audio track"); picker = Picker.None }
+            } else {
+                ChoiceDialog("Audio", opts.mapIndexed { i, o -> i.toString() to (o.label + if (o.detail.isNotBlank()) "  ·  ${o.detail}" else "") }, opts.indexOfFirst { it.selected }.toString(), { picker = Picker.None }) { i ->
+                    opts.getOrNull(i.toInt())?.let { pb.selectTrack(C.TRACK_TYPE_AUDIO, it) }
+                }
+            }
+        }
+        Picker.Subtitles -> {
+            val v by pb.tracksVersion.collectAsState()
+            val opts = remember(v) { pb.textTracks() }
+            val choices = buildList {
+                add("off" to "Off")
+                opts.forEachIndexed { i, o -> add(i.toString() to o.label) }
+                if (cur?.seekable == true) {
+                    add("url" to "Add subtitles from address (URL)…")
+                    if (!tv) add("file" to "Add subtitles from file (SRT, VTT)…")
+                }
+            }
+            val sel = if (pb.subtitlesOff) "off" else opts.indexOfFirst { it.selected }.takeIf { it >= 0 }?.toString() ?: "off"
+            ChoiceDialog("Subtitles", choices, sel, { if (picker == Picker.Subtitles) picker = Picker.None }) { v2 ->
+                when (v2) {
+                    "off" -> pb.disableSubtitles()
+                    "url" -> scope.launch { delay(50); picker = Picker.SubtitleUrl }
+                    "file" -> pickFile.launch(arrayOf("*/*"))
+                    else -> opts.getOrNull(v2.toInt())?.let { pb.selectTrack(C.TRACK_TYPE_TEXT, it) }
+                }
+            }
+        }
+        Picker.SubtitleUrl -> TextInputDialog("Subtitles from address", "", "https://…/subtitles.srt", onDismiss = { picker = Picker.None }) { url ->
+            if (url.startsWith("http")) pb.addSubtitle(SubtitleSource(url.trim(), "Subtitles", "", Downloads.subtitleMime(url)))
+        }
+        Picker.Aspect -> ChoiceDialog("Picture", listOf("fit" to "Fit to screen", "fill" to "Stretch to fill", "zoom" to "Zoom (crop)"), aspect, { picker = Picker.None }) { aspect = it }
+        Picker.Sleep -> {
+            val sleepAt by pb.sleepAt.collectAsState()
+            val curMin = if (sleepAt == 0L) "0" else ""
+            ChoiceDialog("Sleep timer", listOf("0" to "Off", "15" to "15 minutes", "30" to "30 minutes", "60" to "1 hour", "90" to "1.5 hours", "120" to "2 hours"), curMin, { picker = Picker.None }) {
+                pb.setSleepTimer(it.toInt())
+                if (it != "0") vm.toast("Playback stops in ${it} min")
+            }
+        }
+        Picker.None -> Unit
+    }
+}
+
+private fun commitNumber(vm: AppViewModel, digits: String) {
+    val n = digits.toIntOrNull() ?: return
+    val ch = vm.channels.value.firstOrNull { it.num == n }
+    if (ch == null) {
+        vm.toast("Channel $n not found")
+        return
+    }
+    val list = vm.groupChannels.value.takeIf { l -> l.any { it.key == ch.key } } ?: vm.channels.value
+    vm.playChannel(ch, list)
+}
+
+private fun handleKey(
+    type: KeyEventType,
+    key: Key,
+    repeat: Int,
+    item: PlayItem?,
+    tv: Boolean,
+    onZap: (Int) -> Unit,
+    onChannels: () -> Unit,
+    onOptions: () -> Unit,
+    onPrevious: () -> Unit,
+    onBanner: () -> Unit,
+    onDigit: (Char) -> Unit,
+    onControls: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onTogglePause: () -> Unit,
+    onCommitDigits: () -> Unit,
+    hasDigits: Boolean,
+): Boolean {
+    if (!tv || item == null) return false
+    val live = item.isLive
+    val code = key.nativeKeyCode
+    // OK: short press on key up, long press while held
+    if (isOkKey(key)) {
+        if (type == KeyEventType.KeyDown && repeat == 1) onOptions()
+        if (type == KeyEventType.KeyUp && repeat == 0) {
+            when {
+                hasDigits -> onCommitDigits()
+                live -> onChannels()
+                else -> onControls()
+            }
+        }
+        return true
+    }
+    if (type != KeyEventType.KeyDown) return code in handledCodes
+    if (code in AKeyEvent.KEYCODE_0..AKeyEvent.KEYCODE_9 && live) {
+        onDigit('0' + (code - AKeyEvent.KEYCODE_0))
+        return true
+    }
+    when (code) {
+        AKeyEvent.KEYCODE_DPAD_UP, AKeyEvent.KEYCODE_CHANNEL_UP -> if (live) onZap(1) else onControls()
+        AKeyEvent.KEYCODE_DPAD_DOWN, AKeyEvent.KEYCODE_CHANNEL_DOWN -> if (live) onZap(-1) else onControls()
+        AKeyEvent.KEYCODE_DPAD_LEFT -> if (live) onChannels() else onSeek(-10_000)
+        AKeyEvent.KEYCODE_DPAD_RIGHT -> if (live) onPrevious() else onSeek(10_000)
+        AKeyEvent.KEYCODE_MEDIA_REWIND -> onSeek(-30_000)
+        AKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> onSeek(30_000)
+        AKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, AKeyEvent.KEYCODE_MEDIA_PLAY, AKeyEvent.KEYCODE_MEDIA_PAUSE, AKeyEvent.KEYCODE_SPACE -> onTogglePause()
+        AKeyEvent.KEYCODE_MENU -> onOptions()
+        AKeyEvent.KEYCODE_INFO -> if (live) onBanner() else onControls()
+        AKeyEvent.KEYCODE_LAST_CHANNEL -> onPrevious()
+        AKeyEvent.KEYCODE_GUIDE -> onOptions()
+        AKeyEvent.KEYCODE_CAPTIONS -> onOptions()
+        else -> return false
+    }
+    return true
+}
+
+private val handledCodes = setOf(
+    AKeyEvent.KEYCODE_DPAD_UP, AKeyEvent.KEYCODE_DPAD_DOWN, AKeyEvent.KEYCODE_DPAD_LEFT, AKeyEvent.KEYCODE_DPAD_RIGHT,
+    AKeyEvent.KEYCODE_CHANNEL_UP, AKeyEvent.KEYCODE_CHANNEL_DOWN, AKeyEvent.KEYCODE_MENU, AKeyEvent.KEYCODE_INFO,
+)
+
+/** Brightness (left half) and volume (right half) by vertical swipe; seek by horizontal swipe */
+private suspend fun gestureControls(
+    context: Context,
+    scope: androidx.compose.ui.input.pointer.PointerInputScope,
+    seekable: Boolean,
+    isLocked: () -> Boolean,
+    onLabel: (String) -> Unit,
+    onSeek: (Long) -> Unit,
+) {
+    val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    val maxVol = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    val activity = context as? Activity
+    var mode = 0 // 1 = brightness, 2 = volume, 3 = seek
+    var startX = 0f
+    var acc = 0f
+    var seekMs = 0L
+    var startVol = 0
+    var startBright = 0.5f
+    scope.detectDragGestures(
+        onDragStart = { o ->
+            mode = 0
+            startX = o.x
+            acc = 0f
+            seekMs = 0
+            startVol = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val b = activity?.window?.attributes?.screenBrightness ?: -1f
+            startBright = if (b < 0) 0.5f else b
+        },
+        onDragEnd = {
+            if (mode == 3 && seekMs != 0L) onSeek(seekMs)
+            mode = 0
+        },
+        onDrag = { change, drag ->
+            if (isLocked()) return@detectDragGestures
+            change.consume()
+            if (mode == 0) {
+                mode = when {
+                    kotlin.math.abs(drag.x) > kotlin.math.abs(drag.y) -> if (seekable) 3 else -1
+                    startX < scope.size.width / 2 -> 1
+                    else -> 2
+                }
+            }
+            when (mode) {
+                1 -> {
+                    acc -= drag.y
+                    val v = (startBright + acc / (scope.size.height * 0.8f)).coerceIn(0.02f, 1f)
+                    activity?.window?.let { w -> w.attributes = w.attributes.also { it.screenBrightness = v } }
+                    onLabel("Brightness ${(v * 100).toInt()}%")
+                }
+                2 -> {
+                    acc -= drag.y
+                    val v = (startVol + (acc / (scope.size.height * 0.8f)) * maxVol).toInt().coerceIn(0, maxVol)
+                    audio.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0)
+                    onLabel("Volume ${v * 100 / maxVol.coerceAtLeast(1)}%")
+                }
+                3 -> {
+                    acc += drag.x
+                    seekMs = (acc / scope.size.width * 120_000).toLong()
+                    onLabel((if (seekMs >= 0) "+" else "−") + Fmt.duration(kotlin.math.abs(seekMs)))
+                }
+            }
+        },
+    )
+}
+
+private fun openExternal(context: Context, vm: AppViewModel, item: PlayItem) {
+    vm.launch {
+        val url = if (item.isLive && item.channel != null) vm.repo.channelUrl(item.channel) else item.url
+        val i = Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(url), "video/*").putExtra("title", item.title)
+        runCatching { context.startActivity(Intent.createChooser(i, "Open with")) }
+    }
+}
+
+// ---------------------------------------------------------------- overlays
+
+/** Channel banner (TV): logo, number, name, now/next with progress */
+@Composable
+private fun InfoBanner(vm: AppViewModel, item: PlayItem, nn: NowNext?, quality: String, now: Long, favorites: Set<String>) {
+    val c = Orbit.colors
+    val ch = item.channel
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF0101521))))
+            .padding(start = 40.dp, end = 40.dp, top = 40.dp, bottom = 28.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            if (ch != null) ChannelLogo(ch.logo, item.title, 96.dp, 56.dp)
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (ch != null && vm.settings.value.showChannelNumbers) Text("${ch.num}", color = c.accent, style = MaterialTheme.typography.headlineSmall)
+                    Text(item.title, color = Color.White, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (quality.isNotBlank()) Pill(quality, c.accent)
+                    if (ch?.archive == true) Pill("ARCHIVE", c.accentAlt)
+                    if (item.kind == "catchup") Pill("CATCH-UP", c.accentAlt, filled = true)
+                    if (ch != null && ch.key in favorites) Icon(Icons.Filled.Star, null, tint = c.accentAlt, modifier = Modifier.size(20.dp))
+                }
+                val p = nn?.now
+                if (item.kind == "catchup") {
+                    Text(item.subtitle, color = Color.White, style = MaterialTheme.typography.bodyLarge)
+                } else if (p != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("${Fmt.time(p.start)} – ${Fmt.time(p.stop)}", color = c.textMuted, style = MaterialTheme.typography.bodyLarge)
+                        Text(p.title, color = Color.White, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        Text("${((p.stop - now) / 60_000).coerceAtLeast(0)} min left", color = c.textMuted, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    ProgressLine((now - p.start).toFloat() / (p.stop - p.start), Modifier.fillMaxWidth().padding(vertical = 8.dp), height = 4.dp)
+                    nn.next?.let { n -> Text("Next  ${Fmt.time(n.start)}  ${n.title}", color = c.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 1) }
+                } else {
+                    Text("No programme information", color = c.textMuted, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(Fmt.time(now), color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                Text("OK  channels   ·   hold OK  options", color = c.textMuted, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+/** Left panel with groups and channels, available while watching */
+@Composable
+private fun ChannelListPanel(vm: AppViewModel, onPick: (ChannelEntity, List<ChannelEntity>) -> Unit) {
+    val c = Orbit.colors
+    val tv = LocalIsTv.current
+    val groups by vm.groups.collectAsState()
+    val all by vm.channels.collectAsState()
+    val playing by vm.playback.item.collectAsState()
+    var group by remember { mutableStateOf(vm.selectedGroup.value) }
+    var showGroups by remember { mutableStateOf(false) }
+    val list = remember(all, group) { vm.channelsOf(all, group) }
+    val nowNext by produceState(emptyMap<String, NowNext>(), list) { value = vm.loadNowNext(list.map { it.epgKey }) }
+    val playingIdx = list.indexOfFirst { it.key == playing?.channel?.key }.coerceAtLeast(0)
+    val state = rememberLazyListState((playingIdx - 4).coerceAtLeast(0))
+    val chFocus = remember { FocusRequester() }
+    val grFocus = remember { FocusRequester() }
+    LaunchedEffect(showGroups, group) {
+        delay(60)
+        runCatching { if (showGroups) grFocus.requestFocus() else chFocus.requestFocus() }
+    }
+    Row(Modifier.fillMaxHeight().background(Color(0xF2121826))) {
+        if (showGroups || !tv) {
+            LazyColumn(Modifier.width(if (tv) 240.dp else 170.dp).fillMaxHeight().padding(8.dp)) {
+                itemsIndexed(groups, key = { _, g -> g.id }) { _, g ->
+                    ListRow(
+                        title = g.name,
+                        subtitle = "${g.count}",
+                        selected = g.id == group,
+                        focusRequester = if (g.id == group) grFocus else null,
+                        modifier = Modifier.onPreviewKeyEvent { e ->
+                            if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) { showGroups = false; true } else false
+                        },
+                    ) {
+                        group = g.id
+                        showGroups = false
+                    }
+                }
+            }
+        }
+        Column(Modifier.width(if (tv) 420.dp else 300.dp).fillMaxHeight().padding(8.dp)) {
+            Text(groups.firstOrNull { it.id == group }?.name ?: "Channels", Modifier.padding(12.dp), color = c.text, style = MaterialTheme.typography.titleMedium)
+            LazyColumn(state = state) {
+                itemsIndexed(list, key = { _, ch -> ch.key }) { i, ch ->
+                    val p = nowNext[ch.epgKey]?.now
+                    ListRow(
+                        title = (if (vm.settings.value.showChannelNumbers) "${ch.num}  " else "") + vm.displayName(ch),
+                        subtitle = p?.title ?: "",
+                        selected = ch.key == playing?.channel?.key,
+                        focusRequester = if (i == playingIdx) chFocus else null,
+                        leading = { ChannelLogo(ch.logo, ch.name, 52.dp, 32.dp) },
+                        modifier = Modifier.onPreviewKeyEvent { e ->
+                            if (tv && e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) { showGroups = true; true } else false
+                        },
+                    ) { onPick(ch, list) }
+                }
+            }
+        }
+    }
+}
+
+/** Long press OK: options bar at the bottom */
+@Composable
+private fun OptionsBar(item: PlayItem, favorite: Boolean, aspect: String, onAction: (String) -> Unit, onClose: () -> Unit) {
+    val first = remember { FocusRequester() }
+    Box(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp).background(Color(0xF21E2533), RoundedCornerShape(16.dp)).padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (item.isLive) IconAction(Icons.AutoMirrored.Filled.List, "Channels", focusRequester = first) { onAction("channels") }
+            IconAction(Icons.Filled.Audiotrack, "Audio", focusRequester = if (!item.isLive) first else null) { onAction("audio") }
+            IconAction(Icons.Filled.ClosedCaption, "Subtitles") { onAction("subs") }
+            IconAction(Icons.Filled.AspectRatio, when (aspect) { "fill" -> "Stretch"; "zoom" -> "Zoom"; else -> "Fit" }) { onAction("aspect") }
+            IconAction(Icons.Filled.Bedtime, "Sleep") { onAction("sleep") }
+            if (item.isLive) IconAction(if (favorite) Icons.Filled.Star else Icons.Filled.StarBorder, if (favorite) "Unfavorite" else "Favorite", active = favorite) { onAction("fav") }
+            if (item.isLive) IconAction(Icons.Filled.DateRange, "TV guide") { onAction("guide") }
+            IconAction(Icons.Filled.Refresh, "Reload") { onAction("retry") }
+            IconAction(Icons.Filled.OpenInNew, "Other player") { onAction("external") }
+        }
+    }
+    LaunchedEffect(Unit) {
+        delay(60)
+        runCatching { first.requestFocus() }
+    }
+}
+
+/** TV controls for movies and episodes: seek bar + buttons */
+@Composable
+private fun BoxScope.TvVodControls(vm: AppViewModel, item: PlayItem, now: Long, onTouch: () -> Unit, onPicker: (Picker) -> Unit, onOptions: () -> Unit) {
+    val pb = vm.playback
+    val c = Orbit.colors
+    val playing by pb.playing.collectAsState()
+    val queue by pb.queue.collectAsState()
+    val index by pb.index.collectAsState()
+    val pos = now.let { pb.positionMs }
+    val dur = now.let { pb.durationMs }
+    val playFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(60)
+        runCatching { playFocus.requestFocus() }
+    }
+    Column(
+        Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF0101521))))
+            .padding(horizontal = 40.dp, vertical = 26.dp)
+            .onPreviewKeyEvent { onTouch(); false },
+    ) {
+        Text(item.title, color = Color.White, style = MaterialTheme.typography.headlineSmall, maxLines = 1)
+        if (item.subtitle.isNotBlank()) Text(item.subtitle, color = c.textMuted, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+        Spacer(Modifier.height(14.dp))
+        // seek bar: focus it and use left/right
+        Focusable(
+            onClick = { pb.togglePause() },
+            modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { e ->
+                if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (e.key) {
+                    Key.DirectionLeft -> { pb.seekBy(-10_000); true }
+                    Key.DirectionRight -> { pb.seekBy(10_000); true }
+                    else -> false
+                }
+            },
+            color = Color.Transparent,
+            focusedColor = Color(0x22FFFFFF),
+            scaleOnFocus = 1f,
+        ) { focused ->
+            Column(Modifier.padding(vertical = 8.dp, horizontal = 4.dp)) {
+                ProgressLine(if (dur > 0) pos.toFloat() / dur else 0f, Modifier.fillMaxWidth(), height = if (focused) 8.dp else 5.dp)
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    Text(Fmt.duration(pos), color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.weight(1f))
+                    if (focused) Text("◀ ▶  seek 10 s", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.weight(1f))
+                    Text(if (dur > 0) "−" + Fmt.duration(dur - pos) else "", color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconAction(Icons.Filled.Replay10, "−10 s") { pb.seekBy(-10_000) }
+            IconAction(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (playing) "Pause" else "Play", focusRequester = playFocus) { pb.togglePause() }
+            IconAction(Icons.Filled.Forward10, "+10 s") { pb.seekBy(10_000) }
+            if (item.kind == "episode" && index < queue.size - 1) IconAction(Icons.Filled.SkipNext, "Next episode") { pb.start(index + 1) }
+            Spacer(Modifier.width(24.dp))
+            IconAction(Icons.Filled.Audiotrack, "Audio") { onPicker(Picker.Audio) }
+            IconAction(Icons.Filled.ClosedCaption, "Subtitles") { onPicker(Picker.Subtitles) }
+            IconAction(Icons.Filled.AspectRatio, "Picture") { onPicker(Picker.Aspect) }
+            IconAction(Icons.Filled.Bedtime, "Sleep") { onPicker(Picker.Sleep) }
+        }
+    }
+}
+
+/** Phone / tablet controls: top bar, centre buttons, seek bar, bottom actions */
+@Composable
+private fun PhoneControls(
+    vm: AppViewModel,
+    item: PlayItem,
+    nn: NowNext?,
+    now: Long,
+    playing: Boolean,
+    locked: Boolean,
+    onBack: () -> Unit,
+    onLock: () -> Unit,
+    onPip: () -> Unit,
+    onChannels: () -> Unit,
+    onPicker: (Picker) -> Unit,
+    onTouch: () -> Unit,
+) {
+    val pb = vm.playback
+    val c = Orbit.colors
+    val queue by pb.queue.collectAsState()
+    val index by pb.index.collectAsState()
+    Box(Modifier.fillMaxSize().background(Color(0x66000000))) {
+        if (locked) {
+            Box(Modifier.align(Alignment.CenterStart).padding(24.dp)) {
+                IconAction(Icons.Filled.Lock, "Unlock", tint = Color.White) { onLock() }
+            }
+            return@Box
+        }
+        // top bar
+        Row(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconAction(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) { onBack() }
+            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                Text(item.title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val sub = if (item.isLive) nn?.now?.title ?: "" else item.subtitle
+                if (sub.isNotBlank()) Text(sub, color = Color(0xFFD5DCE8), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (pb.quality().isNotBlank()) Pill(pb.quality(), c.accent)
+            IconAction(Icons.Filled.PictureInPictureAlt, "PiP", tint = Color.White) { onPip() }
+        }
+        // centre
+        Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(36.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (item.isLive) {
+                BigButton(Icons.Filled.SkipPrevious) { pb.zap(-1); onTouch() }
+                BigButton(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, big = true) { pb.togglePause(); onTouch() }
+                BigButton(Icons.Filled.SkipNext) { pb.zap(1); onTouch() }
+            } else {
+                BigButton(Icons.Filled.Replay10) { pb.seekBy(-10_000); onTouch() }
+                BigButton(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, big = true) { pb.togglePause(); onTouch() }
+                BigButton(Icons.Filled.Forward10) { pb.seekBy(10_000); onTouch() }
+            }
+        }
+        // bottom
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            if (item.seekable) {
+                val dur = pb.durationMs
+                var dragging by remember { mutableStateOf(false) }
+                var dragValue by remember { mutableFloatStateOf(0f) }
+                val pos = if (dragging) (dragValue * dur).toLong() else now.let { pb.positionMs }
+                Slider(
+                    value = if (dur > 0) pos.toFloat() / dur else 0f,
+                    onValueChange = { dragging = true; dragValue = it; onTouch() },
+                    onValueChangeFinished = { pb.seekTo((dragValue * dur).toLong()); dragging = false },
+                    colors = SliderDefaults.colors(thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = Color(0x55FFFFFF)),
+                )
+                Row {
+                    Text(Fmt.duration(pos), color = Color.White, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.weight(1f))
+                    Text(Fmt.duration(dur), color = Color.White, style = MaterialTheme.typography.bodySmall)
+                }
+            } else nn?.now?.let { p ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${Fmt.time(p.start)} – ${Fmt.time(p.stop)}", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.width(10.dp))
+                    ProgressLine((now - p.start).toFloat() / (p.stop - p.start), Modifier.weight(1f))
+                    nn.next?.let { n -> Text("  Next ${Fmt.time(n.start)} ${n.title}", color = Color(0xFFD5DCE8), style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.weight(1f)) }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                if (item.isLive) IconAction(Icons.AutoMirrored.Filled.List, "Channels", tint = Color.White) { onChannels() }
+                IconAction(Icons.Filled.Audiotrack, "Audio", tint = Color.White) { onPicker(Picker.Audio) }
+                IconAction(Icons.Filled.ClosedCaption, "Subtitles", tint = Color.White) { onPicker(Picker.Subtitles) }
+                IconAction(Icons.Filled.AspectRatio, "Picture", tint = Color.White) { onPicker(Picker.Aspect) }
+                IconAction(Icons.Filled.Bedtime, "Sleep", tint = Color.White) { onPicker(Picker.Sleep) }
+                if (item.kind == "episode" && index < queue.size - 1) IconAction(Icons.Filled.SkipNext, "Next", tint = Color.White) { pb.start(index + 1) }
+                IconAction(Icons.Filled.LockOpen, "Lock", tint = Color.White) { onLock() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BigButton(icon: androidx.compose.ui.graphics.vector.ImageVector, big: Boolean = false, onClick: () -> Unit) {
+    Focusable(onClick = onClick, shape = RoundedCornerShape(50), color = Color(0x55000000), focusedColor = Color(0x88000000), scaleOnFocus = 1f) { _ ->
+        Box(Modifier.size(if (big) 76.dp else 56.dp), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = Color.White, modifier = Modifier.size(if (big) 48.dp else 34.dp))
+        }
+    }
+}

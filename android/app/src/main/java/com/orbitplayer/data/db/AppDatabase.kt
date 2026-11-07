@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.Flow
         SeriesEntity::class, ProgramEntity::class, FavoriteEntity::class, ProgressEntity::class,
         DownloadEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,6 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "orbit.db")
+                .addMigrations(MIGRATION_1_2)
                 .fallbackToDestructiveMigration()
                 .build()
     }
@@ -118,6 +119,21 @@ interface ContentDao {
     suspend fun clearChannels(pid: String)
 
     // ---------- movies ----------
+    /** sort: added (newest first) | name (A–Z) | rating (best first); q: '' or a LIKE pattern */
+    @Query(
+        "SELECT * FROM vod WHERE playlistId = :pid AND (:cat = '' OR categoryId = :cat) AND (:q = '' OR name LIKE :q) " +
+            "ORDER BY CASE WHEN :sort = 'name' THEN name END COLLATE NOCASE ASC, " +
+            "CASE WHEN :sort = 'rating' THEN CAST(rating AS REAL) END DESC, added DESC, name COLLATE NOCASE LIMIT :limit",
+    )
+    fun observeVodSorted(pid: String, cat: String, q: String, sort: String, limit: Int): Flow<List<VodEntity>>
+
+    @Query(
+        "SELECT * FROM series WHERE playlistId = :pid AND (:cat = '' OR categoryId = :cat) AND (:q = '' OR name LIKE :q) " +
+            "ORDER BY CASE WHEN :sort = 'name' THEN name END COLLATE NOCASE ASC, " +
+            "CASE WHEN :sort = 'rating' THEN CAST(rating AS REAL) END DESC, added DESC, name COLLATE NOCASE LIMIT :limit",
+    )
+    fun observeSeriesSorted(pid: String, cat: String, q: String, sort: String, limit: Int): Flow<List<SeriesEntity>>
+
     @Query("SELECT * FROM vod WHERE playlistId = :pid AND (:cat = '' OR categoryId = :cat) ORDER BY added DESC, name LIMIT :limit")
     fun observeVod(pid: String, cat: String, limit: Int): Flow<List<VodEntity>>
 
@@ -238,4 +254,12 @@ interface DownloadDao {
 
     @Query("DELETE FROM downloads WHERE id = :id")
     suspend fun delete(id: Long)
+}
+
+/** v2: series get the date they were added (for "Recently added"); playlists reload once to fill it in */
+val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE series ADD COLUMN added INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE playlists SET lastSyncAt = 0")
+    }
 }

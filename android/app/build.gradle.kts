@@ -32,6 +32,8 @@ android {
         versionCode = appVersionCode
         versionName = appVersionName
         vectorDrawables.useSupportLibrary = true
+        // VLC ships native code: keep the ARM builds that phones and TV boxes use (smaller APK)
+        ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
 
     signingConfigs {
@@ -107,6 +109,7 @@ dependencies {
     ksp(libs.room.compiler)
     implementation(libs.okhttp)
     implementation(libs.coil.compose)
+    implementation(libs.libvlc)
     implementation(libs.coroutines.android)
 
     testImplementation(libs.junit)

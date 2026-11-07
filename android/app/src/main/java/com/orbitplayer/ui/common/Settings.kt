@@ -204,7 +204,7 @@ fun SectionContent(vm: AppViewModel, id: String) {
                 }
                 if (tv) item { ToggleRow("Live preview", s.livePreview, "Plays the highlighted channel in the top window of Live TV") { v -> set { it.copy(livePreview = v) } } }
                 item { ToggleRow("Show channel numbers", s.showChannelNumbers) { v -> set { it.copy(showChannelNumbers = v) } } }
-                item { ToggleRow("Clean channel names", s.cleanChannelNames, "Removes prefixes like “UK:” and tags like “FHD”") { v -> set { it.copy(cleanChannelNames = v) } } }
+                item { ToggleRow("Hide country in channel names", s.cleanChannelNames, "Shows “RTS 1” instead of “RS: RTS 1 FHD”. Off shows the full name from the playlist.") { v -> set { it.copy(cleanChannelNames = v) } } }
                 item {
                     SettingRow("Channel info banner", "${s.bannerSeconds} s") {
                         choice = ChoiceSpec("Banner on channel change", listOf(2, 3, 4, 6, 8, 10).map { "$it" to "$it seconds" }, "${s.bannerSeconds}") { v -> set { it.copy(bannerSeconds = v.toInt()) } }
@@ -212,6 +212,12 @@ fun SectionContent(vm: AppViewModel, id: String) {
                 }
             }
             "player" -> {
+                item {
+                    val opts = listOf("auto" to "Automatic (ExoPlayer, VLC when needed)", "exo" to "ExoPlayer", "vlc" to "VLC")
+                    SettingRow("Player engine", opts.first { it.first == s.playerEngine }.second.substringBefore(" ("), "Automatic switches to VLC when a stream can't be played") {
+                        choice = ChoiceSpec("Player engine", opts, s.playerEngine) { v -> set { it.copy(playerEngine = v) } }
+                    }
+                }
                 item {
                     val opts = listOf("small" to "Small (fast start)", "medium" to "Medium", "large" to "Large", "xlarge" to "Very large (unstable lines)")
                     SettingRow("Buffer size", opts.first { it.first == s.buffer }.second.substringBefore(" (")) {

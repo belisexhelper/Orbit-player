@@ -42,6 +42,8 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Forward10
@@ -140,6 +142,7 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
     val context = LocalContext.current
 
     var aspect by remember { mutableStateOf(settings.aspect) }
+    val engine by pb.engine.collectAsState()
     var overlay by remember { mutableStateOf(Overlay.None) }
     var picker by remember { mutableStateOf(Picker.None) }
     var controls by remember { mutableStateOf(false) } // phone controls / TV VOD controls
@@ -339,7 +342,7 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
         // Options bar (long press OK)
         if (overlay == Overlay.Options && cur != null) {
             OptionsBar(
-                cur, channel != null && channel.key in favorites, aspect,
+                cur, channel != null && channel.key in favorites, aspect, engine,
                 onAction = { a ->
                     overlay = Overlay.None
                     when (a) {
@@ -354,6 +357,7 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
                             vm.root(com.orbitplayer.ui.Route.Guide)
                         }
                         "retry" -> pb.retry()
+                        "engine" -> switchEngine(vm)
                         "external" -> openExternal(context, vm, cur)
                     }
                 },
@@ -665,7 +669,7 @@ private fun ChannelListPanel(vm: AppViewModel, onPick: (ChannelEntity, List<Chan
 
 /** Long press OK: options bar at the bottom */
 @Composable
-private fun OptionsBar(item: PlayItem, favorite: Boolean, aspect: String, onAction: (String) -> Unit, onClose: () -> Unit) {
+private fun OptionsBar(item: PlayItem, favorite: Boolean, aspect: String, engine: String, onAction: (String) -> Unit, onClose: () -> Unit) {
     val first = remember { FocusRequester() }
     Box(Modifier.fillMaxSize()) {
         Row(
@@ -680,6 +684,7 @@ private fun OptionsBar(item: PlayItem, favorite: Boolean, aspect: String, onActi
             if (item.isLive) IconAction(if (favorite) Icons.Filled.Star else Icons.Filled.StarBorder, if (favorite) "Unfavorite" else "Favorite", active = favorite) { onAction("fav") }
             if (item.isLive) IconAction(Icons.Filled.DateRange, "TV guide") { onAction("guide") }
             IconAction(Icons.Filled.Refresh, "Reload") { onAction("retry") }
+            IconAction(Icons.Filled.SwapHoriz, if (engine == "vlc") "Engine: VLC" else "Engine: Exo") { onAction("engine") }
             IconAction(Icons.Filled.OpenInNew, "Other player") { onAction("external") }
         }
     }
@@ -837,6 +842,12 @@ private fun PhoneControls(
                 IconAction(Icons.Filled.AspectRatio, "Picture", tint = Color.White) { onPicker(Picker.Aspect) }
                 IconAction(Icons.Filled.Bedtime, "Sleep", tint = Color.White) { onPicker(Picker.Sleep) }
                 if (item.kind == "episode" && index < queue.size - 1) IconAction(Icons.Filled.SkipNext, "Next", tint = Color.White) { pb.start(index + 1) }
+                if (item.isLive && item.channel?.archive == true) IconAction(Icons.Filled.History, "Archive", tint = Color.White) {
+                    vm.channelViewGuide = true
+                    vm.leavePlayer(tv = false)
+                }
+                val engine by pb.engine.collectAsState()
+                IconAction(Icons.Filled.SwapHoriz, if (engine == "vlc") "VLC" else "ExoPlayer", tint = Color.White) { switchEngine(vm) }
                 IconAction(Icons.Filled.LockOpen, "Lock", tint = Color.White) { onLock() }
             }
         }
@@ -850,4 +861,11 @@ private fun BigButton(icon: androidx.compose.ui.graphics.vector.ImageVector, big
             Icon(icon, null, tint = Color.White, modifier = Modifier.size(if (big) 48.dp else 34.dp))
         }
     }
+}
+
+/** Continues the current item in the other engine (ExoPlayer ↔ VLC) */
+private fun switchEngine(vm: AppViewModel) {
+    val to = if (vm.playback.engine.value == "vlc") "exo" else "vlc"
+    vm.playback.switchEngine(to)
+    vm.toast(if (to == "vlc") "Playing with VLC" else "Playing with ExoPlayer")
 }

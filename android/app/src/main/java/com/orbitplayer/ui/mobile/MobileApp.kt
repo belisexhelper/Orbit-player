@@ -52,6 +52,7 @@ import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -122,6 +123,7 @@ fun MobileApp(vm: AppViewModel, onExit: () -> Unit) {
     var lastBack by remember { mutableLongStateOf(0L) }
     BackHandler(enabled = !playerOpen) {
         when {
+            vm.route == Route.ChannelView -> vm.closeChannelView()
             vm.backStack.size > 2 -> vm.back()
             vm.route != Route.Home -> vm.root(Route.Home)
             System.currentTimeMillis() - lastBack < 2000 -> onExit()
@@ -133,8 +135,26 @@ fun MobileApp(vm: AppViewModel, onExit: () -> Unit) {
     }
     val section = vm.backStack.getOrNull(1) ?: Route.Home
     val selectedTab = TABS.firstOrNull { it.route == section }?.route ?: if (vm.backStack.size == 1) Route.Home else null
+    val playing by vm.playback.item.collectAsState()
     BoxWithConstraints(Modifier.fillMaxSize().background(Orbit.colors.background)) {
         val wide = maxWidth >= 600.dp
+        SideEffect { vm.wideLayout = wide }
+        // Sound only while a picture is visible: full screen, the mini player screen, or the wide Live screen.
+        // Rotating moves the mini player between its own screen (portrait) and the Live screen (landscape).
+        val route = vm.route
+        LaunchedEffect(wide, route, playerOpen, playing?.isLive) {
+            if (playerOpen) return@LaunchedEffect
+            val item = vm.playback.item.value ?: return@LaunchedEffect
+            when {
+                wide && route == Route.ChannelView -> {
+                    vm.back()
+                    if (vm.route != Route.Live) vm.root(Route.Live)
+                }
+                !wide && route == Route.Live && item.isLive -> vm.open(Route.ChannelView)
+                route == Route.ChannelView || (wide && route == Route.Live && item.isLive) -> Unit
+                else -> vm.playback.stop()
+            }
+        }
         if (wide) {
             Row(Modifier.fillMaxSize().safeDrawingPadding()) {
                 NavigationRail(containerColor = Orbit.colors.surface) {
@@ -177,7 +197,7 @@ private fun MobileContent(vm: AppViewModel, wide: Boolean) {
     when (val r = vm.route) {
         Route.Home -> MobileHome(vm, wide)
         Route.Live -> MobileLive(vm, wide)
-        Route.ChannelView -> ChannelView(vm, wide)
+        Route.ChannelView -> if (wide) MobileLive(vm, wide = true) else ChannelView(vm, wide = false)
         Route.Guide -> GuideScreen(vm)
         Route.Movies -> VodBrowseScreen(vm, series = false)
         Route.Series -> VodBrowseScreen(vm, series = true)
@@ -432,7 +452,8 @@ fun ChannelView(vm: AppViewModel, wide: Boolean, embedded: Boolean = false) {
     val queue by vm.playback.queue.collectAsState()
     val playerOpen by vm.playerOpen.collectAsState()
     val ch = item?.channel
-    var tab by remember { mutableStateOf(if (embedded) 1 else 0) }
+    var tab by remember { mutableStateOf(if (embedded || vm.channelViewGuide) 1 else 0) }
+    LaunchedEffect(Unit) { vm.channelViewGuide = false }
     val now = System.currentTimeMillis()
     val nn by produceState<NowNext?>(null, ch?.key) { value = ch?.let { vm.loadNowNext(listOf(it.epgKey))[it.epgKey] } }
     val progs by produceState(emptyList<ProgramEntity>(), ch?.key) {
@@ -442,7 +463,7 @@ fun ChannelView(vm: AppViewModel, wide: Boolean, embedded: Boolean = false) {
     }
     Column(Modifier.fillMaxSize()) {
         if (!embedded) Row(verticalAlignment = Alignment.CenterVertically) {
-            IconAction(Icons.AutoMirrored.Filled.ArrowBack, "Back") { vm.back() }
+            IconAction(Icons.AutoMirrored.Filled.ArrowBack, "Back") { vm.closeChannelView() }
             Text("Live TV", color = c.text, style = MaterialTheme.typography.titleLarge)
         }
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
@@ -506,5 +527,4 @@ fun ChannelView(vm: AppViewModel, wide: Boolean, embedded: Boolean = false) {
             }
         }
     }
-    LaunchedEffect(Unit) { if (embedded) tab = 1 }
 }

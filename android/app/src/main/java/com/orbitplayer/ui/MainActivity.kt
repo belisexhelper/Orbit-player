@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.orbitplayer.core.DeviceInfo
 import com.orbitplayer.ui.common.PlayerScreen
@@ -96,13 +97,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (vm.playback.playing.value && (vm.playerOpen.value || vm.route == Route.ChannelView)) enterPip()
+        val live = vm.playback.item.value?.isLive == true
+        val visible = vm.playerOpen.value || vm.route == Route.ChannelView || (vm.wideLayout && vm.route == Route.Live && live)
+        if (vm.playback.playing.value && visible) enterPip()
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPip.value = isInPictureInPictureMode
         if (isInPictureInPictureMode) vm.playerOpen.value = true
+        // the small window was closed with its X: stop instead of playing on in the background
+        else if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) vm.closePlayer(stop = true)
     }
 
     override fun onStop() {
@@ -112,6 +117,12 @@ class MainActivity : ComponentActivity() {
             vm.playback.saveProgress()
             vm.playback.pause()
         }
+    }
+
+    override fun onDestroy() {
+        // leaving the app for good: nothing should keep playing
+        if (isFinishing) vm.playback.stop()
+        super.onDestroy()
     }
 
     override fun onStart() {

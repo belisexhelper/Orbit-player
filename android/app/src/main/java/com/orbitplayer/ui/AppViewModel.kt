@@ -304,11 +304,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 if (route != Route.Live) root(Route.Live)
                 closePlayer(stop = !settings.value.livePreview)
             }
+            wideLayout -> {
+                // tablet / phone in landscape: the Live screen shows the mini player next to the list
+                closePlayer(stop = false)
+                if (route != Route.Live) root(Route.Live)
+            }
             else -> {
                 closePlayer(stop = false)
                 if (route != Route.ChannelView) open(Route.ChannelView)
             }
         }
+    }
+
+    /** Phone/tablet: true when the wide layout (list + mini player side by side) is shown */
+    var wideLayout = false
+
+    /** Open the mini player screen on the TV guide tab (archive button in the player) */
+    var channelViewGuide = false
+
+    /** Leaves the mini player screen: nothing is visible any more, so playback stops */
+    fun closeChannelView() {
+        playback.stop()
+        back()
     }
 
     fun launch(block: suspend () -> Unit) = viewModelScope.launch { block() }
@@ -364,7 +381,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ---------- movies and series ----------
-    val vodSort = MutableStateFlow("added") // added | name
+    val vodSort = MutableStateFlow("added") // added | name | rating
+    val seriesSort = MutableStateFlow("added")
 
     fun vodCategories(): Flow<List<CategoryEntity>> = combine(
         activePlaylist.flatMapLatest { p -> if (p == null) kotlinx.coroutines.flow.flowOf(emptyList()) else app.db.content().observeCategories(p.id, "vod") },
@@ -376,16 +394,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         filters,
     ) { c, f -> c.filter { it.key !in f.hiddenG && !(f.hideAdult && it.adult && !f.unlocked) } }
 
-    fun movies(category: String): Flow<List<VodEntity>> = combine(activePlaylist, vodSort) { p, s -> p to s }.flatMapLatest { (p, s) ->
-        when {
-            p == null -> kotlinx.coroutines.flow.flowOf(emptyList())
-            s == "name" -> app.db.content().observeVodByName(p.id, category, 5000)
-            else -> app.db.content().observeVod(p.id, category, 5000)
-        }
+    /** Movies of a category ("" = all), sorted; a non-empty [query] searches all categories */
+    fun movies(category: String, query: String = ""): Flow<List<VodEntity>> = combine(activePlaylist, vodSort) { p, s -> p to s }.flatMapLatest { (p, s) ->
+        if (p == null) kotlinx.coroutines.flow.flowOf(emptyList())
+        else if (query.isNotBlank()) app.db.content().observeVodSorted(p.id, "", "%${query.trim()}%", s, 500)
+        else app.db.content().observeVodSorted(p.id, category, "", s, 30_000)
     }.combine(filters) { l, f -> if (f.hideAdult && !f.unlocked) l.filter { !it.adult } else l }
 
-    fun series(category: String): Flow<List<SeriesEntity>> = activePlaylist.flatMapLatest { p ->
-        if (p == null) kotlinx.coroutines.flow.flowOf(emptyList()) else app.db.content().observeSeries(p.id, category, 5000)
+    fun series(category: String, query: String = ""): Flow<List<SeriesEntity>> = combine(activePlaylist, seriesSort) { p, s -> p to s }.flatMapLatest { (p, s) ->
+        if (p == null) kotlinx.coroutines.flow.flowOf(emptyList())
+        else if (query.isNotBlank()) app.db.content().observeSeriesSorted(p.id, "", "%${query.trim()}%", s, 500)
+        else app.db.content().observeSeriesSorted(p.id, category, "", s, 30_000)
     }.combine(filters) { l, f -> if (f.hideAdult && !f.unlocked) l.filter { !it.adult } else l }
 
     // ---------- search ----------

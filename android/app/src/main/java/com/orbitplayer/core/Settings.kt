@@ -15,9 +15,10 @@ data class AppSettings(
     val fontScale: Float = 1.0f, // 0.9 | 1.0 | 1.15 | 1.3
     val livePreview: Boolean = false,
     val showChannelNumbers: Boolean = true,
-    val cleanChannelNames: Boolean = true,
+    val cleanChannelNames: Boolean = false, // hide country prefixes like "RS:" (off = full names)
     val bannerSeconds: Int = 4,
     // Player
+    val playerEngine: String = "auto", // auto (ExoPlayer, VLC when needed) | exo | vlc
     val buffer: String = "medium", // small | medium | large | xlarge
     val hardwareDecoding: Boolean = true,
     val streamFormat: String = "ts", // ts | m3u8 (Xtream live)
@@ -54,8 +55,8 @@ data class AppSettings(
 
     fun toJson(): JSONObject = JSONObject()
         .put("theme", theme).put("fontScale", fontScale.toDouble()).put("livePreview", livePreview)
-        .put("showChannelNumbers", showChannelNumbers).put("cleanChannelNames", cleanChannelNames).put("bannerSeconds", bannerSeconds)
-        .put("buffer", buffer).put("hardwareDecoding", hardwareDecoding).put("streamFormat", streamFormat)
+        .put("showChannelNumbers", showChannelNumbers).put("stripChannelPrefix", cleanChannelNames).put("bannerSeconds", bannerSeconds)
+        .put("playerEngine", playerEngine).put("buffer", buffer).put("hardwareDecoding", hardwareDecoding).put("streamFormat", streamFormat)
         .put("autoReconnect", autoReconnect).put("aspect", aspect).put("autoPlayNext", autoPlayNext)
         .put("subtitlesByDefault", subtitlesByDefault).put("subtitleLanguage", subtitleLanguage)
         .put("subtitleSize", subtitleSize).put("subtitleBackground", subtitleBackground)
@@ -69,8 +70,9 @@ data class AppSettings(
             fontScale = o.optDouble("fontScale", defaults.fontScale.toDouble()).toFloat().coerceIn(0.8f, 1.5f),
             livePreview = o.optBoolean("livePreview", defaults.livePreview),
             showChannelNumbers = o.optBoolean("showChannelNumbers", defaults.showChannelNumbers),
-            cleanChannelNames = o.optBoolean("cleanChannelNames", defaults.cleanChannelNames),
+            cleanChannelNames = o.optBoolean("stripChannelPrefix", defaults.cleanChannelNames),
             bannerSeconds = o.optInt("bannerSeconds", defaults.bannerSeconds).coerceIn(2, 15),
+            playerEngine = o.optString("playerEngine", defaults.playerEngine),
             buffer = o.optString("buffer", defaults.buffer),
             hardwareDecoding = o.optBoolean("hardwareDecoding", defaults.hardwareDecoding),
             streamFormat = o.optString("streamFormat", defaults.streamFormat),

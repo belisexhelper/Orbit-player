@@ -208,7 +208,10 @@ fun SpeedTestScreen(vm: AppViewModel) {
         result = null
         speed = 0.0
         scope.launch {
-            val r = SpeedTest.run { p, mbps -> phase = p; speed = mbps }
+            vm.playback.stop() // a playing stream would share the line (and the server's connection limit)
+            val ch = vm.groupChannels.value.firstOrNull() ?: vm.channels.value.firstOrNull()
+            val providerUrl = ch?.let { runCatching { vm.repo.channelUrl(it) }.getOrNull() }
+            val r = SpeedTest.run(providerUrl = providerUrl) { p, mbps -> phase = p; speed = mbps }
             result = r
             phase = "done"
         }
@@ -216,7 +219,7 @@ fun SpeedTestScreen(vm: AppViewModel) {
     LaunchedEffect(Unit) { start() }
     Column(Modifier.fillMaxSize()) {
         PageTitle("Speed test", vm)
-        Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             val accent = c.accent
             val track = c.surfaceFocus
             Box(Modifier.size(240.dp), contentAlignment = Alignment.Center) {
@@ -234,11 +237,12 @@ fun SpeedTestScreen(vm: AppViewModel) {
                 }
             }
             Spacer(Modifier.height(16.dp))
-            Text(when (phase) { "ping" -> "Measuring response time…"; "download" -> "Measuring download speed…"; else -> "" }, color = c.textMuted)
+            Text(when (phase) { "ping" -> "Measuring response time…"; "download" -> "Measuring internet speed…"; "provider" -> "Measuring your IPTV server…"; else -> "" }, color = c.textMuted)
             result?.let { r ->
                 if (r.error.isNotBlank()) Text("The test failed: ${r.error}", color = c.live)
                 else {
-                    Text("Ping ${r.pingMs} ms · Jitter ${r.jitterMs} ms", color = c.text, style = MaterialTheme.typography.titleMedium)
+                    Text("Internet: ${String.format(Locale.US, "%.1f", r.downloadMbps)} Mbps · Ping ${r.pingMs} ms · Jitter ${r.jitterMs} ms", color = c.text, style = MaterialTheme.typography.titleMedium)
+                    if (r.source.isNotBlank()) Text("Test server: ${r.source}", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(6.dp))
                     Text(
                         when {
@@ -249,6 +253,16 @@ fun SpeedTestScreen(vm: AppViewModel) {
                         },
                         color = c.textMuted,
                     )
+                }
+                if (r.providerMbps >= 0 || r.providerError.isNotBlank()) {
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        if (r.providerError.isNotBlank()) "Your IPTV server: not reachable (${r.providerError})"
+                        else "Your IPTV server: ${String.format(Locale.US, "%.1f", r.providerMbps)} Mbps · answers in ${r.providerPingMs} ms",
+                        color = if (r.providerError.isNotBlank()) c.live else c.text,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text("Measured on one live channel. A channel needs about 3–8 Mbps for HD and 15–25 Mbps for 4K.", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
                 }
                 Spacer(Modifier.height(16.dp))
                 OrbitButton("Run again", primary = true, focusRequester = again) { start() }

@@ -107,6 +107,31 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     private var recentJob: Job? = null
     private var sleepJob: Job? = null
     private var previousChannelIndex = -1
+    private var lastUrl = ""
+    private var lastForceHls = false
+
+    /** Which engine plays the current item: "exo" or "vlc". The picture view follows this. */
+    private val _engine = MutableStateFlow("exo")
+    val engine: StateFlow<String> = _engine.asStateFlow()
+    private val usingVlc get() = _engine.value == "vlc"
+
+    /** Set when the user switched engines by hand for the current item */
+    private var manualEngine: String? = null
+
+    val vlc: VlcEngine by lazy {
+        VlcEngine(context, object : VlcEngine.Events {
+            override fun onPlaying(playing: Boolean) { if (usingVlc) _playing.value = playing }
+            override fun onBuffering(buffering: Boolean) { if (usingVlc) _buffering.value = buffering }
+            override fun onReady() {
+                if (!usingVlc) return
+                retries = 0
+                _error.value = null
+            }
+            override fun onEnded() { if (usingVlc) onVlcEnded() }
+            override fun onError() { if (usingVlc) onVlcError() }
+            override fun onTracks() { if (usingVlc) _tracksVersion.value++ }
+        })
+    }
 
     val settings: AppSettings get() = store.settings.value
 
@@ -148,8 +173,11 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !s.subtitlesByDefault)
             .build()
         p.addListener(object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) = onError(error)
+            override fun onPlayerError(error: PlaybackException) {
+                if (!usingVlc) onError(error)
+            }
             override fun onPlaybackStateChanged(state: Int) {
+                if (usingVlc) return
                 _buffering.value = state == Player.STATE_BUFFERING
                 if (state == Player.STATE_READY) {
                     retries = 0
@@ -159,11 +187,12 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                _playing.value = isPlaying
+                if (!usingVlc) _playing.value = isPlaying
             }
 
             override fun onTracksChanged(tracks: Tracks) {
                 _tracksVersion.value++
+                checkUnsupported(tracks)
             }
         })
         return p
@@ -177,7 +206,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         val target = items[index.coerceIn(0, items.size - 1)]
         _queue.value = items
         // same channel already playing: keep the stream, just update the queue
-        if (cur != null && cur.isLive && target.isLive && cur.channel?.key == target.channel?.key && player.playbackState != Player.STATE_IDLE) {
+        if (cur != null && cur.isLive && target.isLive && cur.channel?.key == target.channel?.key && isActive()) {
             _index.value = index
             return
         }
@@ -196,6 +225,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         _item.value = next
         retries = 0
         triedHls = false
+        manualEngine = null
         extraSubs = next.subtitles.toMutableList()
         _error.value = null
         scope.launch {
@@ -227,7 +257,24 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         }
     }
 
+    private fun isActive(): Boolean = if (usingVlc) vlc.hasMedia else (built?.playbackState ?: Player.STATE_IDLE) != Player.STATE_IDLE
+
+    /** Engine for the current item: the user's choice, else the setting ("auto" starts with ExoPlayer) */
+    private fun chosenEngine(): String = manualEngine ?: if (settings.playerEngine == "vlc") "vlc" else "exo"
+
     private fun prepare(url: String, startMs: Long, forceHls: Boolean = false) {
+        lastUrl = url
+        lastForceHls = forceHls
+        if (chosenEngine() == "vlc") {
+            built?.stop()
+            if (vlc.prepare(url, startMs, extraSubs, settings.hardwareDecoding, settings.bufferMs.coerceAtMost(10_000))) {
+                _engine.value = "vlc"
+                return
+            }
+            manualEngine = "exo" // VLC can't load on this device
+        }
+        if (usingVlc) vlc.stop()
+        _engine.value = "exo"
         val p = player
         val b = MediaItem.Builder().setUri(Uri.parse(url))
         if (forceHls || url.contains(".m3u8")) b.setMimeType(MimeTypes.APPLICATION_M3U8)
@@ -247,7 +294,63 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         p.playWhenReady = true
     }
 
-    private fun currentUrl(): String = built?.currentMediaItem?.localConfiguration?.uri?.toString() ?: ""
+    private fun currentUrl(): String = lastUrl
+
+    /** Switches the current item to the other engine and continues from the same position */
+    fun switchEngine(to: String) {
+        val it = _item.value ?: return
+        val pos = if (it.seekable) positionMs else 0L
+        manualEngine = to
+        retries = 0
+        _error.value = null
+        if (lastUrl.isNotBlank()) prepare(lastUrl, pos, lastForceHls)
+    }
+
+    /** "auto": ExoPlayer has the stream but can't decode its audio or video → continue in VLC */
+    private fun checkUnsupported(tracks: Tracks) {
+        if (settings.playerEngine != "auto" || manualEngine != null || usingVlc) return
+        fun broken(type: Int): Boolean {
+            val groups = tracks.groups.filter { it.type == type }
+            return groups.isNotEmpty() && groups.none { it.isSupported }
+        }
+        if (broken(C.TRACK_TYPE_AUDIO) || broken(C.TRACK_TYPE_VIDEO)) {
+            AppLog.w("ExoPlayer can't decode ${_item.value?.title}, switching to VLC")
+            fallbackToVlc()
+        }
+    }
+
+    private fun fallbackToVlc(): Boolean {
+        if (settings.playerEngine != "auto" || manualEngine != null || !vlc.available) return false
+        val it = _item.value ?: return false
+        val pos = if (it.seekable) built?.currentPosition ?: 0L else 0L
+        manualEngine = "vlc"
+        retries = 0
+        _error.value = null
+        prepare(lastUrl, pos, lastForceHls)
+        return true
+    }
+
+    private fun onVlcEnded() {
+        val it = _item.value ?: return
+        // a live stream that "ends" has dropped: reconnect
+        if (it.isLive || it.kind == "catchup" && vlc.durationMs <= 0) onVlcError() else onEnded()
+    }
+
+    private fun onVlcError() {
+        val it = _item.value ?: return
+        val maxRetries = if (it.isLive) 1000 else 4
+        if (settings.autoReconnect && retries < maxRetries) {
+            retries++
+            _error.value = "Connection lost. Reconnecting… ($retries)"
+            val pos = if (it.isLive) 0L else vlc.positionMs
+            scope.launch {
+                delay((2000L * retries).coerceAtMost(10_000L))
+                if (_item.value === it && usingVlc) prepare(lastUrl, pos, lastForceHls)
+            }
+        } else {
+            _error.value = "The stream can't be played. Check your connection and subscription, or try the other player engine."
+        }
+    }
 
     // ---------------- errors and reconnect ----------------
 
@@ -271,6 +374,9 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
             prepare(url.removeSuffix(".ts") + ".m3u8", 0)
             return
         }
+        // anything that is not a network problem (container, codec, audio output): try VLC
+        val networkProblem = error.errorCode in 2000..2999
+        if (!networkProblem && fallbackToVlc()) return
         val maxRetries = if (it.isLive) 1000 else 4
         if (settings.autoReconnect && retries < maxRetries) {
             retries++
@@ -283,7 +389,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
             _error.value = when (error.errorCode) {
                 PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "The server refused the stream. Check that your subscription is active and the connection limit is not reached."
                 PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Can't reach the server. Check your internet connection."
-                PlaybackException.ERROR_CODE_DECODER_INIT_FAILED, PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED -> "This device can't decode the stream. Try switching the video decoder in Settings → Player."
+                PlaybackException.ERROR_CODE_DECODER_INIT_FAILED, PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED -> "This device can't decode the stream. Try the VLC engine or the other video decoder in Settings → Player."
                 else -> "The stream can't be played (${error.errorCodeName})."
             }
             AppLog.w("Player error ${error.errorCodeName} for ${it.title}")
@@ -301,7 +407,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     }
 
     private fun markFinished(it: PlayItem) {
-        val dur = built?.duration?.takeIf { d -> d > 0 } ?: 0L
+        val dur = durationMs
         scope.launch(Dispatchers.IO) {
             repo.db.user().saveProgress(
                 ProgressEntity(it.progressKey, it.kind, it.title, it.poster, it.url, dur, dur, System.currentTimeMillis(), it.seriesKey, it.playlistId, finished = true),
@@ -313,7 +419,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         val url = currentUrl()
         retries = 0
         _error.value = null
-        if (url.isNotBlank()) prepare(url, built?.currentPosition ?: 0) else start(_index.value)
+        if (url.isNotBlank()) prepare(url, if (_item.value?.seekable == true) positionMs else 0) else start(_index.value)
     }
 
     // ---------------- controls ----------------
@@ -333,35 +439,51 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     }
 
     fun togglePause() {
+        if (usingVlc) {
+            if (vlc.isPlaying) vlc.pause() else vlc.play()
+            return
+        }
         val p = built ?: return
         if (p.isPlaying) p.pause() else p.play()
     }
 
     fun seekBy(ms: Long) {
-        val p = built ?: return
         if (_item.value?.seekable != true) return
-        val dur = p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
-        p.seekTo((p.currentPosition + ms).coerceIn(0, dur))
+        val dur = durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE
+        seekTo((positionMs + ms).coerceIn(0, dur))
     }
 
     fun seekTo(ms: Long) {
-        built?.seekTo(ms.coerceAtLeast(0))
+        if (usingVlc) vlc.seekTo(ms) else built?.seekTo(ms.coerceAtLeast(0))
     }
 
     fun stop() {
         saveProgress()
         progressJob?.cancel()
+        recentJob?.let { j -> if (!j.isCompleted) j.cancel() }
         built?.stop()
         built?.clearMediaItems()
+        if (usingVlc) vlc.stop()
+        _engine.value = "exo"
         _item.value = null
         _error.value = null
+        _playing.value = false
+        _buffering.value = false
+        lastUrl = ""
     }
 
-    fun pause() = built?.pause()
+    fun pause() {
+        if (usingVlc) vlc.pause() else built?.pause()
+    }
 
     fun resumeIfReady() {
+        if (_item.value == null) return
+        if (usingVlc) {
+            if (vlc.hasMedia && !vlc.isPlaying) vlc.play()
+            return
+        }
         val p = built ?: return
-        if (_item.value != null && p.playbackState == Player.STATE_READY) p.play()
+        if (p.playbackState == Player.STATE_READY) p.play()
     }
 
     fun setSleepTimer(minutes: Int) {
@@ -374,16 +496,16 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         sleepJob = scope.launch {
             delay(minutes * 60_000L)
             _sleepAt.value = 0
-            built?.pause()
+            pause()
         }
     }
 
     fun saveProgress() {
         val it = _item.value ?: return
-        val p = built ?: return
+        if (!usingVlc && built == null) return
         if (it.progressKey.isBlank() || !it.seekable || it.kind == "catchup") return
-        val pos = p.currentPosition
-        val dur = p.duration.takeIf { d -> d > 0 } ?: 0L
+        val pos = positionMs
+        val dur = durationMs
         if (pos < 10_000) return
         val finished = dur > 0 && pos > dur - 60_000
         val e = ProgressEntity(it.progressKey, it.kind, it.title, it.poster, it.url, pos, dur, System.currentTimeMillis(), it.seriesKey, it.playlistId, finished)
@@ -392,11 +514,11 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
 
     // ---------------- tracks ----------------
 
-    fun audioTracks(): List<TrackOption> = tracks(C.TRACK_TYPE_AUDIO)
+    fun audioTracks(): List<TrackOption> = if (usingVlc) vlc.audioTracks() else tracks(C.TRACK_TYPE_AUDIO)
 
-    fun textTracks(): List<TrackOption> = tracks(C.TRACK_TYPE_TEXT)
+    fun textTracks(): List<TrackOption> = if (usingVlc) vlc.textTracks() else tracks(C.TRACK_TYPE_TEXT)
 
-    val subtitlesOff: Boolean get() = built?.trackSelectionParameters?.disabledTrackTypes?.contains(C.TRACK_TYPE_TEXT) ?: true
+    val subtitlesOff: Boolean get() = if (usingVlc) vlc.subtitlesOff else built?.trackSelectionParameters?.disabledTrackTypes?.contains(C.TRACK_TYPE_TEXT) ?: true
 
     private fun tracks(type: Int): List<TrackOption> {
         val p = built ?: return emptyList()
@@ -419,6 +541,11 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     }
 
     fun selectTrack(type: Int, option: TrackOption) {
+        if (usingVlc) {
+            if (type == C.TRACK_TYPE_AUDIO) vlc.selectAudio(option.groupIndex) else vlc.selectText(option.groupIndex)
+            _tracksVersion.value++
+            return
+        }
         val p = built ?: return
         val group = p.currentTracks.groups.getOrNull(option.groupIndex) ?: return
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
@@ -428,6 +555,11 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     }
 
     fun disableSubtitles() {
+        if (usingVlc) {
+            vlc.disableSubtitles()
+            _tracksVersion.value++
+            return
+        }
         val p = built ?: return
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
         _tracksVersion.value++
@@ -435,18 +567,26 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
 
     /** Adds an external subtitle (SRT/VTT/ASS) and keeps the position */
     fun addSubtitle(s: SubtitleSource) {
-        val p = built ?: return
         extraSubs.add(s)
+        if (usingVlc) {
+            vlc.addSubtitle(s)
+            return
+        }
+        val p = built ?: return
         prepare(currentUrl(), p.currentPosition)
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
     }
 
-    val positionMs: Long get() = built?.currentPosition ?: 0
-    val durationMs: Long get() = built?.duration?.takeIf { it > 0 } ?: 0
-    val bufferedMs: Long get() = built?.bufferedPosition ?: 0
+    val positionMs: Long get() = if (usingVlc) vlc.positionMs else built?.currentPosition ?: 0
+    val durationMs: Long get() = if (usingVlc) vlc.durationMs else built?.duration?.takeIf { it > 0 } ?: 0
+    val bufferedMs: Long get() = if (usingVlc) vlc.positionMs else built?.bufferedPosition ?: 0
 
     /** Video info for the banner: "1920×1080 · 25 fps" */
     fun videoInfo(): String {
+        if (usingVlc) {
+            val (w, h) = vlc.videoSize()
+            return listOfNotNull(if (w > 0) "${w}×$h" else null, "VLC").joinToString(" · ")
+        }
         val f = built?.videoFormat ?: return ""
         val parts = mutableListOf<String>()
         if (f.width > 0) parts += "${f.width}×${f.height}"
@@ -455,7 +595,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     }
 
     fun quality(): String {
-        val h = built?.videoFormat?.height ?: return ""
+        val h = (if (usingVlc) vlc.videoSize().second else built?.videoFormat?.height) ?: return ""
         return when {
             h >= 2000 -> "4K"
             h >= 1000 -> "FHD"

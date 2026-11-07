@@ -1,5 +1,11 @@
 package com.orbitplayer.ui.common
 
+import com.orbitplayer.ui.components.IconAction
+import com.orbitplayer.ui.components.OrbitTextField
+import com.orbitplayer.ui.components.ChoiceDialog
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -92,15 +98,26 @@ fun VodBrowseScreen(vm: AppViewModel, series: Boolean) {
     val favorites by vm.favorites.collectAsState()
     val progress by vm.allProgress.collectAsState()
     val cont by vm.continueWatching.collectAsState()
-    val sort by vm.vodSort.collectAsState()
+    val sortFlow = if (series) vm.seriesSort else vm.vodSort
+    val sort by sortFlow.collectAsState()
+    var searchOpen by remember(series) { mutableStateOf(false) }
+    var query by remember(series) { mutableStateOf("") }
+    var debounced by remember(series) { mutableStateOf("") }
+    LaunchedEffect(query) {
+        delay(300)
+        debounced = if (query.trim().length >= 2) query.trim() else ""
+    }
+    val searching = debounced.isNotEmpty()
+    var sortDialog by remember { mutableStateOf(false) }
+    val searchFocus = remember { FocusRequester() }
     val queryCat = if (cat == CAT_FAV || cat == CAT_CONTINUE) CAT_ALL else cat
-    val movies by remember(queryCat, series) { vm.movies(queryCat) }.collectAsState(null)
-    val shows by remember(queryCat, series) { vm.series(queryCat) }.collectAsState(null)
+    val movies by remember(queryCat, series, debounced) { vm.movies(queryCat, debounced) }.collectAsState(null)
+    val shows by remember(queryCat, series, debounced) { vm.series(queryCat, debounced) }.collectAsState(null)
 
     data class Card(val key: String, val title: String, val image: String, val sub: String, val progress: Float, val open: () -> Unit)
 
     val cards: List<Card>? = if (series) shows?.let { l ->
-        val src = when (cat) {
+        val src = if (searching) l else when (cat) {
             CAT_FAV -> l.filter { it.key in favorites }
             CAT_CONTINUE -> {
                 val keys = cont.filter { it.kind == "episode" }.map { it.seriesKey }.distinct()
@@ -111,7 +128,7 @@ fun VodBrowseScreen(vm: AppViewModel, series: Boolean) {
         }
         src.map { s -> Card(s.key, s.name, s.cover, rating(s.rating), -1f) { vm.open(Route.SeriesDetail(s.key)) } }
     } else movies?.let { l ->
-        val src = when (cat) {
+        val src = if (searching) l else when (cat) {
             CAT_FAV -> l.filter { it.key in favorites }
             CAT_CONTINUE -> {
                 val byKey = l.associateBy { "vod:${it.key}" }
@@ -132,11 +149,47 @@ fun VodBrowseScreen(vm: AppViewModel, series: Boolean) {
         cats.forEach { add(it.categoryId to it.name) }
     }
     val title = if (series) "Series" else "Movies"
-    val sortLabel = if (sort == "name") "A–Z" else "Recently added"
+    val sortOptions = listOf("added" to "Recently added", "name" to "A–Z", "rating" to "Top rated")
+    val sortLabel = sortOptions.firstOrNull { it.first == sort }?.second ?: "Recently added"
+    val heading = if (searching) "Results for “$debounced”" else catList.firstOrNull { it.first == cat }?.second ?: title
+
+    // Search field (searches every category) and the sort chooser, shared by TV and phone
+    val searchBar: @Composable () -> Unit = {
+        if (searchOpen) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                OrbitTextField(query, { query = it }, if (series) "Search all series" else "Search all movies", Modifier.weight(1f), focusRequester = searchFocus)
+                IconAction(Icons.Filled.Close, "Close") { query = ""; debounced = ""; searchOpen = false }
+            }
+            LaunchedEffect(Unit) {
+                delay(100)
+                runCatching { searchFocus.requestFocus() }
+            }
+        }
+    }
+    val sortButton: @Composable () -> Unit = {
+        Focusable(onClick = { sortDialog = true }, shape = RoundedCornerShape(20.dp), color = c.surface) { _ ->
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Sort, null, Modifier.size(18.dp), tint = c.accent)
+                Spacer(Modifier.width(6.dp))
+                Text(sortLabel, color = c.text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(20.dp), tint = c.textMuted)
+            }
+        }
+    }
+    val searchButton: @Composable () -> Unit = {
+        IconAction(Icons.Filled.Search, "Search", active = searchOpen) { searchOpen = !searchOpen; if (!searchOpen) { query = ""; debounced = "" } }
+    }
+    if (sortDialog) {
+        ChoiceDialog("Sort ${title.lowercase()} by", sortOptions, sort, onDismiss = { sortDialog = false }) { v ->
+            sortFlow.value = v
+            sortDialog = false
+        }
+    }
 
     val grid: @Composable (Modifier) -> Unit = { m ->
         when {
             cards == null -> Loading(modifier = m)
+            cards.isEmpty() && searching -> EmptyState("Nothing found", "No ${title.lowercase()} match “$debounced”.", m)
             cards.isEmpty() -> EmptyState(
                 when (cat) { CAT_FAV -> "No favorites yet"; CAT_CONTINUE -> "Nothing to continue"; else -> "Nothing here" },
                 when (cat) { CAT_FAV -> "Long-press a poster to add it to favorites."; CAT_CONTINUE -> "What you start watching appears here."; else -> "This category is empty, or the playlist is still loading." },
@@ -168,22 +221,30 @@ fun VodBrowseScreen(vm: AppViewModel, series: Boolean) {
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(catList.firstOrNull { it.first == cat }?.second ?: title, color = c.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                    if (cards != null) Text("${cards.size}  ", color = c.textMuted, style = MaterialTheme.typography.bodyMedium)
-                    OrbitButton("Sort: $sortLabel", icon = Icons.Filled.Sort) { vm.vodSort.value = if (sort == "name") "added" else "name" }
+                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(heading, color = c.text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (cards != null) Text("${cards.size}", color = c.textMuted, style = MaterialTheme.typography.bodyMedium)
+                    searchButton()
+                    sortButton()
                 }
+                searchBar()
                 grid(Modifier.weight(1f))
             }
         }
     } else {
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, color = c.text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-                OrbitButton(sortLabel, icon = Icons.Filled.Sort) { vm.vodSort.value = if (sort == "name") "added" else "name" }
+                searchButton()
+                sortButton()
             }
-            LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(catList, key = { it.first }) { (id, name) -> OrbitButton(name, primary = id == cat) { cat = id } }
+            Box(Modifier.padding(horizontal = 12.dp)) { Column { searchBar() } }
+            if (searching) {
+                Text("${heading} · all categories" + (cards?.let { " · ${it.size}" } ?: ""), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), color = c.textMuted, style = MaterialTheme.typography.bodyMedium)
+            } else {
+                LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(catList, key = { it.first }) { (id, name) -> OrbitButton(name, primary = id == cat) { cat = id } }
+                }
             }
             grid(Modifier.weight(1f))
         }

@@ -1,5 +1,6 @@
 package com.orbitplayer.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -83,6 +84,7 @@ data class SeriesEntity(
     val categoryId: String,
     val plot: String,
     val rating: String,
+    @ColumnInfo(defaultValue = "0") val added: Long = 0,
     val adult: Boolean = false,
 )
 

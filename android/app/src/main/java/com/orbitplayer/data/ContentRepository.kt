@@ -288,6 +288,7 @@ class ContentRepository(private val context: Context, val db: AppDatabase, priva
                             categoryId = cat,
                             plot = m["plot"] ?: "",
                             rating = m["rating"] ?: "",
+                            added = m["last_modified"]?.toLongOrNull() ?: 0,
                             adult = cat in adultCats,
                         )
                     }

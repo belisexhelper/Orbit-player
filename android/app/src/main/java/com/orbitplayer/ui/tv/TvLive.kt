@@ -134,7 +134,7 @@ fun TvLiveScreen(vm: AppViewModel) {
         onChannelClick = { ch -> vm.playChannel(ch, channels, fullscreen = true) },
         onChannelLongPress = { menuFor = it },
         preview = if (settings.livePreview && !playerOpen && playing?.isLive == true) {
-            { PlayerSurface(vm.playback, settings, settings.aspect, Modifier.fillMaxSize()) }
+            { /* the picture plays full screen behind this screen (TvApp) */ }
         } else null,
         loadPrograms = { ch, from, to -> vm.programs(ch, from, to) },
         onProgramClick = { ch, p ->

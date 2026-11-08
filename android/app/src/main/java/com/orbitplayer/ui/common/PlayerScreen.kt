@@ -114,6 +114,8 @@ import com.orbitplayer.data.db.ChannelEntity
 import com.orbitplayer.playback.PlayItem
 import com.orbitplayer.playback.SubtitleSource
 import com.orbitplayer.ui.AppViewModel
+import com.orbitplayer.ui.components.listItemFocus
+import com.orbitplayer.ui.components.restoreListFocus
 import com.orbitplayer.ui.NowNext
 import com.orbitplayer.ui.components.ChannelLogo
 import com.orbitplayer.ui.components.ChoiceDialog
@@ -643,10 +645,14 @@ private fun BoxScope.TvLivePanel(vm: AppViewModel, item: PlayItem, nn: NowNext?,
         value = vm.programs(ch, t - maxOf(days, 1) * 86_400_000L, t + 12 * 3_600_000L)
     }
     val stripState = rememberLazyListState()
+    val stripFocus = com.orbitplayer.ui.components.rememberListFocus()
+    val watchingKey = programmes.firstOrNull { it.start <= at && it.stop > at }?.let { it.id * 31 + it.start }
     LaunchedEffect(programmes.size) {
         val i = programmes.indexOfFirst { it.start <= at && it.stop > at }
         if (i >= 0) stripState.scrollToItem((i - 1).coerceAtLeast(0))
     }
+    // the card that gets focus when moving down into the strip: the one focused before, else the programme being watched
+    val stripTarget = stripFocus.focusedKey?.takeIf { k -> programmes.any { it.id * 31 + it.start == k } } ?: watchingKey
     val channels = vm.groupChannels.value
 
     Column(
@@ -711,7 +717,12 @@ private fun BoxScope.TvLivePanel(vm: AppViewModel, item: PlayItem, nn: NowNext?,
         // programmes of the channel
         if (programmes.isEmpty()) {
             Text("No programme information for this channel", color = c.textMuted, style = MaterialTheme.typography.bodyMedium)
-        } else LazyRow(state = stripState, horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
+        } else LazyRow(
+            state = stripState,
+            modifier = Modifier.restoreListFocus(stripFocus),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(vertical = 4.dp),
+        ) {
             items(programmes, key = { it.id * 31 + it.start }) { p ->
                 val isNow = p.start <= now && p.stop > now
                 val past = p.stop <= now
@@ -728,7 +739,7 @@ private fun BoxScope.TvLivePanel(vm: AppViewModel, item: PlayItem, nn: NowNext?,
                         }
                     },
                     onLongClick = { if (isNow && archived) vm.playCatchup(ch, p) },
-                    modifier = Modifier.width(240.dp),
+                    modifier = Modifier.listItemFocus(stripFocus, p.id * 31 + p.start, p.id * 31 + p.start == stripTarget).width(240.dp),
                     color = if (watching) c.accent.copy(alpha = 0.22f) else Color(0xCC1E2533),
                     scaleOnFocus = 1.05f,
                 ) { f ->

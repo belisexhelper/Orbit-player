@@ -234,7 +234,17 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
         if (t == null || runCatching { t.requestFocus() }.isFailure) runCatching { railFocus.requestFocus() }
     }
 
+    val playingItem by vm.playback.item.collectAsState()
+    val livePreview = route == Route.Live && settings.livePreview && !playerOpen && playingItem?.isLive == true
+    // a live channel plays without the player only as the Live TV preview: anywhere else (Movies, Settings…) it stops
+    LaunchedEffect(route, playerOpen, playingItem?.isLive) {
+        if (playerOpen || route == Route.Live || playingItem?.isLive != true) return@LaunchedEffect
+        delay(150)
+        if (!vm.playerOpen.value && vm.playback.item.value?.isLive == true) vm.playback.stop()
+    }
     Box(Modifier.fillMaxSize().background(Orbit.colors.background).onFocusChanged { anyFocus = it.hasFocus }) {
+        // Live TV with preview: the channel keeps playing full screen behind the lists (same picture as in the player)
+        if (livePreview) com.orbitplayer.ui.common.PlayerSurface(vm.playback, settings, settings.aspect, Modifier.fillMaxSize())
         Row(Modifier.fillMaxSize()) {
             Spacer(Modifier.width(RAIL_COLLAPSED))
             // Content: Left from its left edge goes to the menu; focus never wanders off in other directions.
@@ -273,7 +283,7 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
             Modifier
                 .width(width)
                 .fillMaxHeight()
-                .background(Color(0xFF10141D))
+                .background(if (livePreview && !railOpen) Color(0xE010141D) else Color(0xFF10141D))
                 .onFocusChanged { railFocused = it.hasFocus }
                 // entering the menu always lands on the current section; Right goes back into the screen
                 .onPreviewKeyEvent { e ->

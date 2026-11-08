@@ -36,7 +36,17 @@ class VlcEngine(private val context: Context, private val events: Events) {
     private fun ensure(): MediaPlayer? {
         mp?.let { return it }
         return try {
-            val l = LibVLC(context, arrayListOf("--http-reconnect", "--audio-time-stretch", "--no-stats", "-v"))
+            val l = LibVLC(context, arrayListOf(
+                "--http-reconnect",
+                "--audio-time-stretch",
+                "--no-stats",
+                // full-quality picture (the default 16-bit output shows banding and looks blurry)
+                "--android-display-chroma=RV32",
+                "--avcodec-skiploopfilter=0",
+                "--avcodec-hw=any",
+                "--avcodec-threads=0",
+                "-v",
+            ))
             val p = MediaPlayer(l)
             p.setEventListener { e -> onEvent(e) }
             lib = l
@@ -68,7 +78,8 @@ class VlcEngine(private val context: Context, private val events: Events) {
         val l = lib ?: return false
         val media = Media(l, Uri.parse(url))
         media.setHWDecoderEnabled(hardware, false)
-        media.addOption(":network-caching=${cachingMs.coerceIn(1000, 20_000)}")
+        media.addOption(":network-caching=${cachingMs.coerceIn(1500, 20_000)}")
+        media.addOption(":file-caching=3000")
         media.addOption(":http-user-agent=${Net.USER_AGENT}")
         if (startMs > 0) media.addOption(":start-time=${startMs / 1000.0}")
         p.setMedia(media)

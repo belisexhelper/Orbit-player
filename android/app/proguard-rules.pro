@@ -4,3 +4,4 @@
 -dontwarn org.openjsse.**
 -keep class org.videolan.libvlc.** { *; }
 -dontwarn org.videolan.**
+-keep class androidx.media3.decoder.ffmpeg.** { *; }

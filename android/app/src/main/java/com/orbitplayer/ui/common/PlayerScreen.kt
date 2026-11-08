@@ -587,6 +587,7 @@ private fun InfoBanner(vm: AppViewModel, item: PlayItem, nn: NowNext?, quality: 
                     if (ch != null && vm.settings.value.showChannelNumbers) Text("${ch.num}", color = c.accent, style = MaterialTheme.typography.headlineSmall)
                     Text(item.title, color = Color.White, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (quality.isNotBlank()) Pill(quality, c.accent)
+                    EnginePill(vm)
                     if (ch?.archive == true) Pill("ARCHIVE", c.accentAlt)
                     if (item.kind == "catchup") Pill("CATCH-UP", c.accentAlt, filled = true)
                     if (ch != null && ch.key in favorites) Icon(Icons.Filled.Star, null, tint = c.accentAlt, modifier = Modifier.size(20.dp))
@@ -722,7 +723,11 @@ private fun BoxScope.TvVodControls(vm: AppViewModel, item: PlayItem, now: Long, 
             .padding(horizontal = 40.dp, vertical = 26.dp)
             .onPreviewKeyEvent { onTouch(); false },
     ) {
-        Text(item.title, color = Color.White, style = MaterialTheme.typography.headlineSmall, maxLines = 1)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(item.title, color = Color.White, style = MaterialTheme.typography.headlineSmall, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+            if (pb.quality().isNotBlank()) Pill(pb.quality(), c.accent)
+            EnginePill(vm)
+        }
         if (item.subtitle.isNotBlank()) Text(item.subtitle, color = c.textMuted, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
         Spacer(Modifier.height(14.dp))
         // seek bar: focus it and use left/right
@@ -802,6 +807,8 @@ private fun PhoneControls(
                 if (sub.isNotBlank()) Text(sub, color = Color(0xFFD5DCE8), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (pb.quality().isNotBlank()) Pill(pb.quality(), c.accent)
+            Spacer(Modifier.width(6.dp))
+            EnginePill(vm)
             IconAction(Icons.Filled.PictureInPictureAlt, "PiP", tint = Color.White) { onPip() }
         }
         // centre
@@ -875,4 +882,11 @@ private fun switchEngine(vm: AppViewModel) {
     val to = if (vm.playback.engine.value == "vlc") "exo" else "vlc"
     vm.playback.switchEngine(to)
     vm.toast(if (to == "vlc") "Playing with VLC" else "Playing with ExoPlayer")
+}
+
+/** Which engine is playing: EXO (ExoPlayer) or VLC */
+@Composable
+private fun EnginePill(vm: AppViewModel) {
+    val engine by vm.playback.engine.collectAsState()
+    Pill(if (engine == "vlc") "VLC" else "EXO", if (engine == "vlc") Orbit.colors.accentAlt else Orbit.colors.textMuted)
 }

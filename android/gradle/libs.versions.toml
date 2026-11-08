@@ -16,6 +16,8 @@ roborazzi = "1.32.2"
 robolectric = "4.14.1"
 
 [libraries]
+# FFmpeg audio for ExoPlayer (AC3, E-AC3, DTS, TrueHD...) so such films/series stay in ExoPlayer
+media3-ffmpeg = { group = "org.jellyfin.media3", name = "media3-ffmpeg-decoder", version = "1.5.0+1" }
 libvlc = { group = "org.videolan.android", name = "libvlc-all", version.ref = "libvlc" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }

@@ -115,6 +115,9 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     val engine: StateFlow<String> = _engine.asStateFlow()
     private val usingVlc get() = _engine.value == "vlc"
 
+    /** Short messages for the user (shown as a toast) */
+    val notices = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 4)
+
     /** Set when the user switched engines by hand for the current item */
     private var manualEngine: String? = null
 
@@ -149,7 +152,10 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
 
     private fun build(): ExoPlayer {
         val s = settings
-        val renderers = DefaultRenderersFactory(context).setEnableDecoderFallback(true)
+        // the device's decoders first; FFmpeg (software) for audio formats the device can't play
+        val renderers = DefaultRenderersFactory(context)
+            .setEnableDecoderFallback(true)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         if (!s.hardwareDecoding) {
             renderers.setMediaCodecSelector(MediaCodecSelector { mime, secure, tunneling ->
                 val all = MediaCodecUtil.getDecoderInfos(mime, secure, tunneling)
@@ -326,6 +332,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         manualEngine = "vlc"
         retries = 0
         _error.value = null
+        notices.tryEmit("ExoPlayer can't play this, switched to VLC")
         prepare(lastUrl, pos, lastForceHls)
         return true
     }

@@ -442,6 +442,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ---------- start-up ----------
+    init {
+        viewModelScope.launch { playback.notices.collect { toast(it) } }
+    }
+
     fun startup() = viewModelScope.launch {
         launch {
             if (settings.value.autoUpdateCheck) {

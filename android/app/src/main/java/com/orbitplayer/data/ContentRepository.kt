@@ -389,10 +389,11 @@ class ContentRepository(private val context: Context, val db: AppDatabase, priva
         status(id, SyncStatus(running = true, step = "Loading TV guide…"))
         try {
             val batches = ArrayList<List<ProgramEntity>>()
+            val icons = HashMap<String, String>()
             Net.iptv.newCall(Request.Builder().url(url).build()).execute().use { r ->
                 if (!r.isSuccessful) throw IOException("TV guide is not available (HTTP ${r.code})")
                 val batch = ArrayList<ProgramEntity>(2000)
-                XmltvParser.parse(r.body!!.byteStream(), wanted, from, to) { pr ->
+                XmltvParser.parse(r.body!!.byteStream(), wanted, from, to, icons) { pr ->
                     batch += ProgramEntity(epgKey = "$id:${pr.channel}", playlistId = id, start = pr.start, stop = pr.stop, title = pr.title, description = pr.desc)
                     if (batch.size >= 2000) {
                         batches += ArrayList(batch)
@@ -407,6 +408,8 @@ class ContentRepository(private val context: Context, val db: AppDatabase, priva
             }
             db.epg().deleteOld(now - (pastDays + 1) * 86_400_000L)
             db.playlists().markEpg(id, System.currentTimeMillis())
+            // channel logos from the guide (used for channels without a working logo)
+            LogoFinder.saveGuideIcons(context, id, icons)
             status(id, SyncStatus(doneAt = System.currentTimeMillis()))
         } catch (e: Exception) {
             AppLog.w("TV guide for ${p.name} failed", e)

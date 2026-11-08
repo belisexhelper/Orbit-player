@@ -1,6 +1,7 @@
 package com.orbitplayer
 
 import kotlinx.coroutines.launch
+import okhttp3.ResponseBody.Companion.toResponseBody
 import android.app.Application
 import com.orbitplayer.core.Store
 import com.orbitplayer.data.ContentRepository
@@ -12,7 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
 /** Holds the shared objects of the app (simple manual dependency injection). */
-class App : Application() {
+class App : Application(), coil.ImageLoaderFactory {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     lateinit var store: Store; private set
@@ -43,6 +44,28 @@ class App : Application() {
         updater = com.orbitplayer.core.Updater(this, appScope)
         appScope.launch { com.orbitplayer.data.LogoFinder.loadSaved(this@App) }
     }
+
+    /**
+     * Images: a deleted imgur picture comes back as imgur's "image no longer available" placeholder
+     * (a redirect to removed.png). Treat it as missing, so the channel shows its initials instead.
+     */
+    override fun newImageLoader(): coil.ImageLoader = coil.ImageLoader.Builder(this)
+        .okHttpClient {
+            okhttp3.OkHttpClient.Builder()
+                .addInterceptor { chain ->
+                    val res = chain.proceed(chain.request())
+                    if (res.request.url.encodedPath.endsWith("/removed.png")) {
+                        res.close()
+                        okhttp3.Response.Builder()
+                            .request(res.request).protocol(res.protocol).code(404).message("Removed image")
+                            .body(ByteArray(0).toResponseBody(null))
+                            .build()
+                    } else res
+                }
+                .build()
+        }
+        .crossfade(true)
+        .build()
 }
 
 /** The saved crash report from the last run (read once) */

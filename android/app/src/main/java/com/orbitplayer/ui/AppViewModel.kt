@@ -366,6 +366,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Settings row that opened another screen (section id, row title): Back returns focus to it */
+    var settingsReturn: Pair<String, String>? = null
+    val settingsReturnFocus = androidx.compose.ui.focus.FocusRequester()
+
     /** TV movies/series screens: chosen category and the focused poster, kept while visiting details */
     val vodBrowseState = HashMap<Boolean, Triple<String, Any?, Int>>()
 

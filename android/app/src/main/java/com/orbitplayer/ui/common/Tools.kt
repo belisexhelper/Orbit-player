@@ -277,14 +277,14 @@ fun SpeedTestScreen(vm: AppViewModel) {
                 }
             }
             Spacer(Modifier.height(16.dp))
-            if (result == null && phase != "done") {
-                OrbitButton("Stop", focusRequester = again) {
+            // one button whose text changes (Stop → Run again), so the focus stays on it when the test ends
+            val measuring = result == null && phase != "done"
+            OrbitButton(if (measuring) "Stop" else "Run again", focusRequester = again) {
+                if (measuring) {
                     job?.cancel()
                     phase = "done"
                     result = SpeedResult(downloadMbps = speed, error = if (speed <= 0.05) "Stopped" else "")
-                }
-            } else {
-                OrbitButton("Run again", primary = true, focusRequester = again) { start() }
+                } else start()
             }
         }
     }

@@ -118,9 +118,21 @@ fun SettingsScreen(vm: AppViewModel) {
     val c = Orbit.colors
     val sections = SECTIONS.filter { tv || !it.tvOnly }
     if (tv) {
-        var current by remember { mutableStateOf(sections.first().id) }
+        val back = vm.settingsReturn
+        var current by remember { mutableStateOf(back?.first?.takeIf { id -> sections.any { it.id == id } } ?: sections.first().id) }
         val first = remember { FocusRequester() }
-        com.orbitplayer.ui.tv.TvEntryPoint(first)
+        // coming back from Speed test, Diagnostics…: focus the row that opened it
+        com.orbitplayer.ui.tv.TvEntryPoint(if (back != null) vm.settingsReturnFocus else first)
+        if (back != null) LaunchedEffect(Unit) {
+            repeat(8) {
+                kotlinx.coroutines.delay(60)
+                if (runCatching { vm.settingsReturnFocus.requestFocus() }.isSuccess) {
+                    vm.settingsReturn = null
+                    return@LaunchedEffect
+                }
+            }
+            vm.settingsReturn = null
+        }
         Row(Modifier.fillMaxSize().padding(start = 20.dp, end = 24.dp, top = 18.dp)) {
             Column(Modifier.width(280.dp).fillMaxHeight()) {
                 Text("Settings", Modifier.padding(start = 14.dp, bottom = 10.dp), color = c.text, style = MaterialTheme.typography.headlineSmall)
@@ -289,8 +301,18 @@ fun SectionContent(vm: AppViewModel, id: String) {
             "history" -> item { HistorySection(vm) }
             "backup" -> item { BackupSection(vm) }
             "tools" -> {
-                item { SettingRow("Internet speed test") { vm.open(Route.SpeedTest) } }
-                item { SettingRow("Diagnostics", subtitle = "Device, network and playlist servers") { vm.open(Route.Diagnostics) } }
+                item {
+                    SettingRow("Internet speed test", focusRequester = returnFocusFor(vm, id, "Internet speed test")) {
+                        vm.settingsReturn = id to "Internet speed test"
+                        vm.open(Route.SpeedTest)
+                    }
+                }
+                item {
+                    SettingRow("Diagnostics", subtitle = "Device, network and playlist servers", focusRequester = returnFocusFor(vm, id, "Diagnostics")) {
+                        vm.settingsReturn = id to "Diagnostics"
+                        vm.open(Route.Diagnostics)
+                    }
+                }
                 item {
                     SettingRow("Clear image cache") {
                         vm.app.cacheDir.deleteRecursively()
@@ -591,3 +613,7 @@ private fun HistorySection(vm: AppViewModel) {
         }
     }
 }
+
+/** The requester for the settings row that opened another screen (so Back can return to it) */
+private fun returnFocusFor(vm: AppViewModel, section: String, title: String): FocusRequester? =
+    vm.settingsReturn?.takeIf { it.first == section && it.second == title }?.let { vm.settingsReturnFocus }

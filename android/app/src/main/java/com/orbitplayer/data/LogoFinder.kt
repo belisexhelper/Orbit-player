@@ -17,13 +17,32 @@ import java.io.File
 import java.text.Normalizer
 
 /**
- * Channel logos for channels whose playlist has none (or a broken one), from the public
- * iptv-org channel database. Channels are matched by their guide id, else by name, preferring the
- * country of the channel's group (SRBIJA → RS, HRVATSKA → HR …). Results are kept per channel name.
+ * Channel logos for channels whose playlist has none (or a broken one). Sources, best first:
+ *  1. the TV guide's own channel icons (matched by guide id)
+ *  2. the tv-logo/tv-logos collection on GitHub (good quality, many ex-YU channels)
+ *  3. the iptv-org channel database
+ * Name matches prefer the country of the channel's group (SRBIJA → RS, HRVATSKA → HR …), else the
+ * playlist's main region. Results are kept per channel name.
  */
 object LogoFinder {
     private const val BASE = "https://raw.githubusercontent.com/iptv-org/database/master/data"
     private const val MAX_AGE_MS = 7 * 86_400_000L
+    private const val TVLOGOS_TREE = "https://api.github.com/repos/tv-logo/tv-logos/git/trees/main?recursive=1"
+    private const val TVLOGOS_RAW = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/"
+
+    /** Guide icons of a playlist (tvg-id → address), saved when the guide is loaded */
+    fun saveGuideIcons(context: Context, playlistId: String, icons: Map<String, String>) {
+        if (icons.isEmpty()) return
+        runCatching {
+            File(context.filesDir, "guide-icons-${playlistId.hashCode()}.json").writeText(JSONObject(icons as Map<*, *>).toString())
+            File(context.filesDir, "logo-fallbacks.sig").delete() // match again with the new icons
+        }
+    }
+
+    private fun guideIcons(context: Context, playlistId: String): Map<String, String> = runCatching {
+        val o = JSONObject(File(context.filesDir, "guide-icons-${playlistId.hashCode()}.json").readText())
+        o.keys().asSequence().associateWith { o.getString(it) }
+    }.getOrElse { emptyMap() }
 
     /** channel name (as in the playlist, and cleaned) → logo address. Read by ChannelLogo. */
     var logos by mutableStateOf<Map<String, String>>(emptyMap())
@@ -50,7 +69,7 @@ object LogoFinder {
         withContext(Dispatchers.IO) {
             try {
                 val playlists = db.playlists().all()
-                val signature = playlists.joinToString("|") { "${it.id}:${it.lastSyncAt}:${it.liveCount}" }
+                val signature = "v${com.orbitplayer.BuildConfig.VERSION_CODE}|" + playlists.joinToString("|") { "${it.id}:${it.lastSyncAt}:${it.liveCount}" }
                 val sigFile = File(context.filesDir, "logo-fallbacks.sig")
                 val dbFile = File(File(context.filesDir, "logodb"), "channels.csv")
                 val fresh = dbFile.exists() && System.currentTimeMillis() - dbFile.lastModified() < MAX_AGE_MS
@@ -58,11 +77,13 @@ object LogoFinder {
                 val dir = File(context.filesDir, "logodb").apply { mkdirs() }
                 val channelsCsv = download(File(dir, "channels.csv"), "$BASE/channels.csv") ?: return@withContext
                 val logosCsv = download(File(dir, "logos.csv"), "$BASE/logos.csv") ?: return@withContext
-                val index = Index.build(channelsCsv, logosCsv)
+                val tvTree = download(File(dir, "tvlogos.json"), TVLOGOS_TREE, accept = "application/vnd.github+json")
+                val index = Index.build(channelsCsv, logosCsv, tvTree)
                 val result = HashMap<String, String>()
                 for (p in playlists) {
                     val groupNames = db.content().categories(p.id, "live").associate { it.categoryId to it.name }
                     val chans = db.content().channels(p.id)
+                    val guide = guideIcons(context, p.id)
                     // 1st pass: candidates; countries of clear matches vote for the playlist's main region
                     val found = chans.map { ch -> ch to index.candidates(ch.epgKey.substringAfter(':', ""), ch.name, groupNames[ch.categoryId] ?: "") }
                     val votes = HashMap<String, Int>()
@@ -72,12 +93,19 @@ object LogoFinder {
                         if (c != null) votes[c] = (votes[c] ?: 0) + 1
                     }
                     val ranked = votes.entries.sortedByDescending { it.value }.map { it.key }
-                    // 2nd pass: pick by the channel's own country, else the playlist's most common one
+                    // 2nd pass: the guide's icon; else by the channel's own country, else the playlist's most
+                    // common one; among equals the better source
                     for ((ch, m) in found) {
-                        val url = m.direct ?: m.cands.let { c ->
+                        val url = guide[ch.epgKey.substringAfter(':', "")] ?: m.direct ?: m.cands.let { c ->
                             if (c.isEmpty()) null
-                            else (c.firstOrNull { it.second == m.hint } ?: ranked.firstNotNullOfOrNull { r -> c.firstOrNull { it.second == r } } ?: c.first())
-                                .let { index.logo(it.first) }
+                            else {
+                                val hints = hintCodes(m.hint)
+                                c.minByOrNull { e ->
+                                    val countryScore = hints.indexOf(e.second).takeIf { it >= 0 }
+                                        ?: ranked.indexOf(e.second).takeIf { it >= 0 }?.plus(10) ?: 99
+                                    countryScore * 10 + e.third
+                                }?.let { index.logo(it.first) }
+                            }
                         } ?: continue
                         result[key(ch.name)] = url
                         result[key(com.orbitplayer.core.ChannelNames.clean(ch.name))] = url
@@ -93,10 +121,11 @@ object LogoFinder {
         }
     }
 
-    private fun download(target: File, url: String): File? {
+    private fun download(target: File, url: String, accept: String? = null): File? {
         if (target.exists() && System.currentTimeMillis() - target.lastModified() < MAX_AGE_MS && target.length() > 10_000) return target
         return runCatching {
-            Net.iptv.newCall(Request.Builder().url(url).build()).execute().use { r ->
+            val req = Request.Builder().url(url).header("User-Agent", "OrbitPlayer").apply { if (accept != null) header("Accept", accept) }.build()
+            Net.iptv.newCall(req).execute().use { r ->
                 if (!r.isSuccessful) error("HTTP ${r.code}")
                 val tmp = File(target.path + ".tmp")
                 r.body!!.byteStream().use { input -> tmp.outputStream().use { input.copyTo(it) } }
@@ -111,10 +140,10 @@ object LogoFinder {
 
     private class Index(
         private val byId: Map<String, String>, // lowercase id → id
-        private val byName: Map<String, List<Pair<String, String>>>, // normalized name → (id, country)
+        private val byName: Map<String, List<Triple<String, String, Int>>>, // normalized name → (id, country, source rank)
         private val logoOf: Map<String, String>, // id → logo
     ) {
-        class Match(val direct: String?, val cands: List<Pair<String, String>>, val hint: String?)
+        class Match(val direct: String?, val cands: List<Triple<String, String, Int>>, val hint: String?)
 
         fun logo(id: String): String? = logoOf[id]
 
@@ -129,9 +158,32 @@ object LogoFinder {
         }
 
         companion object {
-            fun build(channels: File, logos: File): Index {
+            fun build(channels: File, logos: File, tvTree: File?): Index {
                 val byId = HashMap<String, String>()
-                val byName = HashMap<String, MutableList<Pair<String, String>>>()
+                val byName = HashMap<String, MutableList<Triple<String, String, Int>>>()
+                val logoOf = HashMap<String, String>()
+                // tv-logos: countries/<country>/<name>-<cc>.png
+                if (tvTree != null) runCatching {
+                    val tree = JSONObject(tvTree.readText()).getJSONArray("tree")
+                    for (i in 0 until tree.length()) {
+                        val path = tree.getJSONObject(i).optString("path")
+                        if (!path.startsWith("countries/") || !path.endsWith(".png", true)) continue
+                        val parts = path.split('/')
+                        if (parts.size != 3) continue
+                        val country = folderCountry(parts[1])
+                        var file = parts[2].substringBeforeLast('.').lowercase()
+                        if ("mosaic" in file) continue
+                        file = file.replace(Regex("-[a-z]{2,3}$"), "") // country suffix
+                        val icon = file.endsWith("-icon") || "-icon-" in file
+                        file = file.replace("-icon", "").replace("-hz", "")
+                        val id = "tvlogos:$path"
+                        logoOf[id] = TVLOGOS_RAW + path.split('/').joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+                        for (v in nameVariants(file.replace('-', ' '))) {
+                            if (v.length < 2) continue
+                            byName.getOrPut(v) { ArrayList(2) }.add(Triple(id, country, if (icon) 1 else 0))
+                        }
+                    }
+                }
                 channels.bufferedReader().useLines { lines ->
                     var header: List<String>? = null
                     for (line in lines) {
@@ -146,7 +198,7 @@ object LogoFinder {
                         val names = listOf(col("name")) + col("alt_names").split(';')
                         for (nm in names) for (v in nameVariants(nm)) {
                             if (v.length < 2) continue
-                            byName.getOrPut(v) { ArrayList(2) }.add(id to country)
+                            byName.getOrPut(v) { ArrayList(2) }.add(Triple(id, country, 2))
                         }
                     }
                 }
@@ -171,7 +223,8 @@ object LogoFinder {
                         if (cur == null || score > cur.first) best[id] = score to url
                     }
                 }
-                return Index(byId, byName, best.mapValues { it.value.second })
+                for ((id, b) in best) logoOf[id] = b.second
+                return Index(byId, byName, logoOf)
             }
         }
     }
@@ -193,6 +246,11 @@ object LogoFinder {
         if (base.endsWith("tv") && base.length > 4) out += base.removeSuffix("tv")
         if (base.startsWith("tv") && base.length > 4) out += base.removePrefix("tv")
         if (!base.endsWith("tv")) out += base + "tv"
+        // providers write "Arena 1 Premium" and "Arena Sport 1 Premium" for the same channel
+        for (v in out.toList()) {
+            if ("arenasport" in v) out += v.replace("arenasport", "arena")
+            else if ("arena" in v) out += v.replace("arena", "arenasport")
+        }
         return out.toList()
     }
 
@@ -207,6 +265,34 @@ object LogoFinder {
         "US" to listOf("usa", "us"),
         "DE" to listOf("germany", "deutschland", "de"),
     )
+
+    /** Where to look when the channel's own country has no logo (ex-YU channels are often listed under Serbia/Croatia) */
+    private fun hintCodes(hint: String?): List<String> = when (hint) {
+        null -> emptyList()
+        "BA" -> listOf("BA", "RS", "HR")
+        "ME" -> listOf("ME", "RS")
+        "MK" -> listOf("MK", "RS")
+        "SI" -> listOf("SI", "HR")
+        else -> listOf(hint)
+    }
+
+    private fun folderCountry(folder: String): String = when (folder) {
+        "serbia" -> "RS"
+        "croatia" -> "HR"
+        "slovenia" -> "SI"
+        "united-kingdom" -> "UK"
+        "united-states" -> "US"
+        "germany" -> "DE"
+        "austria" -> "AT"
+        "switzerland" -> "CH"
+        "albania" -> "AL"
+        "bulgaria" -> "BG"
+        "hungary" -> "HU"
+        "romania" -> "RO"
+        "greece" -> "GR"
+        "turkey" -> "TR"
+        else -> folder.uppercase()
+    }
 
     private fun countryHint(name: String, group: String): String? {
         val prefix = Regex("""^\s*[\[(|]?\s*([A-Za-z]{2,6})\s*[\])|:]""").find(name)?.groupValues?.get(1)?.lowercase()

@@ -28,7 +28,7 @@ object XmltvParser {
      * @param wanted kanali koje lista ima (tvg-id malim slovima); ostali se preskaču
      * @param from/to prozor vremena koji čuvamo
      */
-    fun parse(input: InputStream, wanted: Set<String>, from: Long, to: Long, onProgram: (XmltvProgram) -> Unit) {
+    fun parse(input: InputStream, wanted: Set<String>, from: Long, to: Long, icons: MutableMap<String, String>? = null, onProgram: (XmltvProgram) -> Unit) {
         val parser = Xml.newPullParser()
         parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
         parser.setInput(maybeGunzip(input), null)
@@ -49,6 +49,10 @@ object XmltvParser {
                 XmlPullParser.START_TAG -> when (parser.name) {
                     "channel" -> currentChannelId = parser.getAttributeValue(null, "id")?.lowercase()
                     "display-name" -> if (currentChannelId != null) field = "display-name"
+                    // channel logo in the guide: <icon src="..."/>
+                    "icon" -> if (icons != null) currentChannelId?.let { id ->
+                        parser.getAttributeValue(null, "src")?.trim()?.takeIf { it.startsWith("http") }?.let { icons[id] = it }
+                    }
                     "programme" -> {
                         val ch = (parser.getAttributeValue(null, "channel") ?: "").lowercase()
                         channel = ch

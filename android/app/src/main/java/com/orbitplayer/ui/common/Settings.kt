@@ -1,5 +1,6 @@
 package com.orbitplayer.ui.common
 
+import androidx.compose.material.icons.filled.History
 import com.orbitplayer.ui.components.OrbitButton
 import com.orbitplayer.ui.components.ProgressLine
 import com.orbitplayer.core.Updater
@@ -99,7 +100,8 @@ val SECTIONS = listOf(
     SettingsSection("player", "Player", Icons.Filled.PlayCircle),
     SettingsSection("subtitles", "Subtitles", Icons.Filled.ClosedCaption),
     SettingsSection("parental", "Parental control", Icons.Filled.FamilyRestroom),
-    SettingsSection("startup", "Start-up", Icons.Filled.PowerSettingsNew, tvOnly = true),
+    SettingsSection("startup", "Start-up", Icons.Filled.PowerSettingsNew),
+    SettingsSection("history", "Watch history", Icons.Filled.History),
     SettingsSection("backup", "Backup & restore", Icons.Filled.Backup),
     SettingsSection("tools", "Speed test & diagnostics", Icons.Filled.Build),
     SettingsSection("about", "Updates & about", Icons.Filled.SystemUpdate),
@@ -278,9 +280,10 @@ fun SectionContent(vm: AppViewModel, id: String) {
             "parental" -> item { ParentalSection(vm, s) }
             "startup" -> {
                 item { ToggleRow("Start on the last channel", s.startOnLastChannel, "Opening the app continues the channel you watched last") { v -> set { it.copy(startOnLastChannel = v) } } }
-                item { ToggleRow("Start with the device", s.autostartOnBoot, "Some devices don't allow apps to start on boot") { v -> set { it.copy(autostartOnBoot = v) } } }
+                if (tv) item { ToggleRow("Start with the device", s.autostartOnBoot, "Some devices don't allow apps to start on boot") { v -> set { it.copy(autostartOnBoot = v) } } }
                 item { ToggleRow("Ask before exiting", s.confirmExit) { v -> set { it.copy(confirmExit = v) } } }
             }
+            "history" -> item { HistorySection(vm) }
             "backup" -> item { BackupSection(vm) }
             "tools" -> {
                 item { SettingRow("Internet speed test") { vm.open(Route.SpeedTest) } }
@@ -535,5 +538,36 @@ private fun BackupSection(vm: AppViewModel) {
                 .onFailure { vm.toast("This device has no file manager for opening files") }
         }
         Text("The backup contains your playlist passwords. Keep the file private.", Modifier.padding(14.dp), color = Orbit.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+// ---------------------------------------------------------------- watch history
+
+@Composable
+private fun HistorySection(vm: AppViewModel) {
+    var ask by remember { mutableStateOf<Triple<String, String, () -> Unit>?>(null) }
+    Column {
+        SettingRow("Clear recently watched channels", subtitle = "Empties the “Recently watched” group") {
+            ask = Triple("Clear recently watched channels?", "The “Recently watched” group will be empty.") { vm.clearRecentChannels() }
+        }
+        SettingRow("Clear watched movies", subtitle = "Removes movies from “Continue watching” and their resume points") {
+            ask = Triple("Clear watched movies?", "Movies will start from the beginning and leave “Continue watching”.") { vm.clearWatched(listOf("vod")) }
+        }
+        SettingRow("Clear watched series", subtitle = "Removes episodes from “Continue watching” and their resume points") {
+            ask = Triple("Clear watched series?", "Episodes will start from the beginning and leave “Continue watching”.") { vm.clearWatched(listOf("episode")) }
+        }
+        SettingRow("Clear search history") {
+            ask = Triple("Clear search history?", "Recent searches will be removed.") { vm.clearSearchHistory() }
+        }
+        SettingRow("Clear all watch history", subtitle = "Everything above, and the last watched channel") {
+            ask = Triple("Clear all watch history?", "Recently watched channels, resume points of movies and series, searches and the last channel will be removed. Favorites stay.") { vm.clearAllHistory() }
+        }
+    }
+    ask?.let { (title, text, run) ->
+        com.orbitplayer.ui.components.ConfirmDialog(title, text, "Clear", onDismiss = { ask = null }) {
+            run()
+            ask = null
+            vm.toast("Cleared")
+        }
     }
 }

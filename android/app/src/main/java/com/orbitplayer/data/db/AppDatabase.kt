@@ -230,6 +230,10 @@ interface UserDao {
 
     @Query("DELETE FROM progress WHERE `key` = :key")
     suspend fun deleteProgress(key: String)
+
+    /** kinds: vod, episode */
+    @Query("DELETE FROM progress WHERE kind IN (:kinds)")
+    suspend fun deleteProgressOfKinds(kinds: List<String>)
 }
 
 @Dao

@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
         val firstStart = savedInstanceState == null
         if (firstStart) {
             vm.startup()
-            if (isTv && vm.settings.value.startOnLastChannel) vm.playLastChannel(fullscreen = true)
+            if (vm.settings.value.startOnLastChannel) vm.playLastChannelWhenReady(fullscreen = true)
         }
         lifecycleScope.launch { vm.messages.collect { Toast.makeText(this@MainActivity, it, Toast.LENGTH_SHORT).show() } }
         // keep the screen on while something plays; phone full screen goes landscape and hides system bars

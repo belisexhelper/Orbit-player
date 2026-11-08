@@ -1,5 +1,6 @@
 package com.orbitplayer.ui
 
+import kotlinx.coroutines.flow.first
 import android.app.Application
 import androidx.compose.runtime.mutableStateListOf
 import androidx.lifecycle.AndroidViewModel
@@ -285,6 +286,34 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         selectGroup(group)
         playChannel(ch, channelsOf(channels.value, group), fullscreen)
         return true
+    }
+
+    /** At app start: waits until the channel list is loaded, then plays the last channel */
+    fun playLastChannelWhenReady(fullscreen: Boolean) = viewModelScope.launch {
+        if (store.lastChannelKey.isBlank()) return@launch
+        kotlinx.coroutines.withTimeoutOrNull(20_000) { channels.first { it.isNotEmpty() } } ?: return@launch
+        kotlinx.coroutines.withTimeoutOrNull(3_000) { groups.first { it.isNotEmpty() } }
+        if (playback.item.value == null) playLastChannel(fullscreen)
+    }
+
+    // ---- watch history ----
+    fun clearRecentChannels() {
+        store.recentChannels = emptyList()
+        recent.value = emptyList()
+        if (selectedGroup.value == GROUP_RECENT) selectGroup(GROUP_ALL)
+    }
+
+    fun clearWatched(kinds: List<String>) = launch { app.db.user().deleteProgressOfKinds(kinds) }
+
+    fun clearSearchHistory() {
+        store.searchHistory = emptyList()
+    }
+
+    fun clearAllHistory() {
+        clearRecentChannels()
+        clearWatched(listOf("vod", "episode"))
+        clearSearchHistory()
+        store.lastChannelKey = ""
     }
 
     fun closePlayer(stop: Boolean) {

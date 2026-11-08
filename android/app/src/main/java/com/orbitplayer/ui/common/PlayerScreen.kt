@@ -403,10 +403,7 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
                         "sleep" -> picker = Picker.Sleep
                         "fav" -> channel?.let { vm.toggleFavorite(it.key, "live") }
                         "channels" -> overlay = Overlay.Channels
-                        "guide" -> {
-                            vm.closePlayer(stop = false)
-                            vm.root(com.orbitplayer.ui.Route.Guide)
-                        }
+                        "guide" -> overlay = Overlay.Panel
                         "retry" -> pb.retry()
                         "startover" -> channel?.let { vm.startOver(it) }
                         "engine" -> switchEngine(vm)
@@ -886,7 +883,7 @@ private fun OptionsBar(item: PlayItem, favorite: Boolean, aspect: String, engine
             IconAction(Icons.Filled.Bedtime, "Sleep") { onAction("sleep") }
             if (item.isLive) IconAction(if (favorite) Icons.Filled.Star else Icons.Filled.StarBorder, if (favorite) "Unfavorite" else "Favorite", active = favorite) { onAction("fav") }
             if (item.isLive && item.channel?.archive == true) IconAction(Icons.Filled.Replay, "Start over") { onAction("startover") }
-            if (item.isLive) IconAction(Icons.Filled.DateRange, "TV guide") { onAction("guide") }
+            if (item.isLive) IconAction(Icons.Filled.DateRange, "Programmes") { onAction("guide") }
             IconAction(Icons.Filled.Refresh, "Reload") { onAction("retry") }
             IconAction(Icons.Filled.SwapHoriz, if (engine == "vlc") "Engine: VLC" else "Engine: Exo") { onAction("engine") }
             IconAction(Icons.Filled.OpenInNew, "Other player") { onAction("external") }

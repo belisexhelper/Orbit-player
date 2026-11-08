@@ -84,7 +84,6 @@ private data class RailItem(val route: Route, val label: String, val icon: Image
 private val RAIL = listOf(
     RailItem(Route.Search, "Search", Icons.Filled.Search),
     RailItem(Route.Live, "Live TV", Icons.Filled.LiveTv),
-    RailItem(Route.Guide, "TV guide", Icons.Filled.DateRange),
     RailItem(Route.Movies, "Movies", Icons.Filled.Movie),
     RailItem(Route.Series, "Series", Icons.Filled.VideoLibrary),
     RailItem(Route.Favorites, "My list", Icons.Filled.Star),
@@ -193,10 +192,17 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
     var beforePlayer by remember { mutableStateOf<FocusRequester?>(null) }
     DisposableEffect(vm) {
         vm.beforePlayerCloses = {
-            // the playing channel when the screen offers it (it may differ after zapping), else the element used before
+            // live: the playing channel when the screen offers it (it may differ after zapping);
+            // a programme from the archive: the programme it was started from. Else the element used before.
             val playing = entry.afterPlayer
-            val ok = (playing != null && runCatching { playing.requestFocus() }.isSuccess) ||
-                (beforePlayer?.let { b -> runCatching { b.requestFocus() }.isSuccess } == true)
+            val before = beforePlayer
+            val catchup = vm.playback.item.value?.isCatchup == true
+            val first = if (catchup) before else playing
+            val second = if (catchup) playing else before
+            val ok = (first != null && runCatching { first.requestFocus() }.isSuccess) ||
+                (second != null && runCatching { second.requestFocus() }.isSuccess)
+            // done here: the delayed restore below must not move focus again (back to the channel the player was opened from)
+            beforePlayer = null
             if (!ok) {
                 val e = entry.requester
                 if (e == null || runCatching { e.requestFocus() }.isFailure) runCatching { contentFocus.requestFocus() }

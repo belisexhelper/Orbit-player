@@ -152,7 +152,6 @@ fun TvLiveScreen(vm: AppViewModel) {
         ActionsDialog(vm.displayName(ch), buildList {
             add(MenuAction("Watch", Icons.Filled.PlayArrow) { vm.playChannel(ch, channels) })
             add(MenuAction(if (fav) "Remove from favorites" else "Add to favorites", if (fav) Icons.Filled.StarBorder else Icons.Filled.Star) { vm.toggleFavorite(ch.key, "live") })
-            if (ch.archive) add(MenuAction("Programme archive (TV guide)", Icons.Filled.History) { vm.root(Route.Guide) })
             add(MenuAction("Hide channel", Icons.Filled.VisibilityOff) { vm.hideChannel(ch) })
             add(MenuAction("Open in another player", Icons.Filled.OpenInNew) {
                 vm.launch {

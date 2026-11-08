@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
         val firstStart = savedInstanceState == null
         if (firstStart) {
             vm.startup()
-            if (vm.settings.value.startOnLastChannel) vm.playLastChannelWhenReady(fullscreen = true)
+            if (isTv && vm.settings.value.startOnLastChannel) vm.playLastChannelWhenReady(fullscreen = true)
         }
         // keep the screen on while something plays; phone full screen goes landscape and hides system bars
         lifecycleScope.launch {

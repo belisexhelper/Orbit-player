@@ -100,7 +100,7 @@ val SECTIONS = listOf(
     SettingsSection("player", "Player", Icons.Filled.PlayCircle),
     SettingsSection("subtitles", "Subtitles", Icons.Filled.ClosedCaption),
     SettingsSection("parental", "Parental control", Icons.Filled.FamilyRestroom),
-    SettingsSection("startup", "Start-up", Icons.Filled.PowerSettingsNew),
+    SettingsSection("startup", "Start-up", Icons.Filled.PowerSettingsNew, tvOnly = true),
     SettingsSection("history", "Watch history", Icons.Filled.History),
     SettingsSection("backup", "Backup & restore", Icons.Filled.Backup),
     SettingsSection("tools", "Speed test & diagnostics", Icons.Filled.Build),
@@ -280,7 +280,7 @@ fun SectionContent(vm: AppViewModel, id: String) {
             "parental" -> item { ParentalSection(vm, s) }
             "startup" -> {
                 item { ToggleRow("Start on the last channel", s.startOnLastChannel, "Opening the app continues the channel you watched last") { v -> set { it.copy(startOnLastChannel = v) } } }
-                if (tv) item { ToggleRow("Start with the device", s.autostartOnBoot, "Some devices don't allow apps to start on boot") { v -> set { it.copy(autostartOnBoot = v) } } }
+                item { ToggleRow("Start with the device", s.autostartOnBoot, "Some devices don't allow apps to start on boot") { v -> set { it.copy(autostartOnBoot = v) } } }
                 item { ToggleRow("Ask before exiting", s.confirmExit) { v -> set { it.copy(confirmExit = v) } } }
             }
             "history" -> item { HistorySection(vm) }

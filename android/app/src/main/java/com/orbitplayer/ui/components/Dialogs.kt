@@ -200,7 +200,7 @@ fun OrbitTextField(
                 // remote: up/down always leave the field (also when the keyboard was closed with Back),
                 // OK opens the keyboard again; left/right still move the cursor
                 val code = e.nativeKeyEvent.keyCode
-                val down = e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown
+                val down = e.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN
                 when (code) {
                     android.view.KeyEvent.KEYCODE_DPAD_DOWN -> { if (down) { keyboardController?.hide(); focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down) }; true }
                     android.view.KeyEvent.KEYCODE_DPAD_UP -> { if (down) { keyboardController?.hide(); focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Up) }; true }

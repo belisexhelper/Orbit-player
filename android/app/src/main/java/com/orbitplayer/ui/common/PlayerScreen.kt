@@ -1,5 +1,6 @@
 package com.orbitplayer.ui.common
 
+import androidx.compose.ui.focus.onFocusChanged
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -199,10 +200,15 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
         digits = ""
     }
     LaunchedEffect(ended) { if (ended > 0) vm.closePlayer(stop = true) }
-    LaunchedEffect(overlay, picker, controls) {
+    // The player must own the remote: if focus ends up anywhere else (e.g. the list behind it), take it back
+    var playerHasFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(overlay, picker, controls, playerHasFocus) {
         if (overlay == Overlay.None && picker == Picker.None && !(controls && tv && item?.seekable == true)) {
-            delay(50)
+            delay(if (playerHasFocus) 50 else 150)
             runCatching { root.requestFocus() }
+        } else if (!playerHasFocus && picker == Picker.None) {
+            delay(300)
+            if (!playerHasFocus) runCatching { root.requestFocus() }
         }
     }
 
@@ -221,6 +227,7 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
         Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .onFocusChanged { playerHasFocus = it.hasFocus }
             .focusProperties { exit = { d -> com.orbitplayer.ui.components.arrowExit(d) } }
             .focusGroup(),
     ) {

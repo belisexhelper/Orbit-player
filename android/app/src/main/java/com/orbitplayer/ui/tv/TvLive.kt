@@ -179,7 +179,8 @@ fun TvLiveContent(
     }
     LaunchedEffect(selectedGroup) { listState.scrollToItem((start - 3).coerceAtLeast(0)) }
     LaunchedEffect(refocusKey, channels.isNotEmpty()) {
-        if (channels.isEmpty()) return@LaunchedEffect
+        // refocus the channel when the player closes; never while it is open (it would take the remote away from it)
+        if (channels.isEmpty() || refocusKey == true) return@LaunchedEffect
         delay(120)
         runCatching { firstFocus.requestFocus() }
     }

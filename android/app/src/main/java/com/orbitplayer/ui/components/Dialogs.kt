@@ -1,5 +1,7 @@
 package com.orbitplayer.ui.components
 
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -158,13 +160,24 @@ fun OrbitTextField(
     focusRequester: FocusRequester? = null,
     onDone: (() -> Unit)? = null,
 ) {
+    // passwords are visible by default (easier to type with a remote); the eye hides them
+    var hidden by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
         singleLine = true,
-        visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
-        keyboardOptions = KeyboardOptions(keyboardType = if (password) KeyboardType.Password else keyboard, autoCorrectEnabled = false),
+        visualTransformation = if (password && hidden) PasswordVisualTransformation() else VisualTransformation.None,
+        trailingIcon = if (password) ({
+            androidx.compose.material3.IconButton(onClick = { hidden = !hidden }) {
+                Icon(
+                    if (hidden) androidx.compose.material.icons.Icons.Filled.Visibility else androidx.compose.material.icons.Icons.Filled.VisibilityOff,
+                    if (hidden) "Show password" else "Hide password",
+                    tint = Orbit.colors.textMuted,
+                )
+            }
+        }) else null,
+        keyboardOptions = KeyboardOptions(keyboardType = if (password && hidden) KeyboardType.Password else keyboard, autoCorrectEnabled = false),
         keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }, onGo = { onDone?.invoke() }, onSearch = { onDone?.invoke() }),
         colors = orbitFieldColors(),
         modifier = (if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier).fillMaxWidth(),

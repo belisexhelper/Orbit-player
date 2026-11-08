@@ -328,18 +328,23 @@ fun OrbitButton(
     val c = Orbit.colors
     val bg = if (primary) c.accent else c.surfaceFocus
     val fg = if (primary) c.onAccent else c.text
+    // Focused buttons turn white with dark text, so it is always obvious which one OK will press
+    val focusBg = Color.White
+    val focusFg = Color(0xFF0F1420)
     Focusable(
         onClick = { if (enabled) onClick() },
         modifier = modifier,
         shape = RoundedCornerShape(10.dp),
         color = if (enabled) bg else bg.copy(alpha = 0.45f),
-        focusedColor = if (primary) c.accent else c.elevated,
-        scaleOnFocus = 1.05f,
+        focusedColor = focusBg,
+        scaleOnFocus = 1.08f,
+        border = false,
         focusRequester = focusRequester,
-    ) { _ ->
+    ) { focused ->
+        val tint = if (focused) focusFg else fg
         Row(Modifier.padding(horizontal = 18.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(20.dp))
-            Text(label, color = fg, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            if (icon != null) Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
+            Text(label, color = tint, style = MaterialTheme.typography.labelLarge, fontWeight = if (focused) FontWeight.Bold else null, maxLines = 1)
         }
     }
 }

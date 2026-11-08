@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
@@ -82,6 +83,7 @@ private val RAIL = listOf(
     RailItem(Route.Search, "Search", Icons.Filled.Search),
     RailItem(Route.Live, "Live TV", Icons.Filled.LiveTv),
     RailItem(Route.Guide, "TV guide", Icons.Filled.DateRange),
+    RailItem(Route.Catchup, "Catch-up", Icons.Filled.History),
     RailItem(Route.Movies, "Movies", Icons.Filled.Movie),
     RailItem(Route.Series, "Series", Icons.Filled.VideoLibrary),
     RailItem(Route.Favorites, "My list", Icons.Filled.Star),
@@ -132,12 +134,18 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
         runCatching { contentFocus.requestFocus() }
     }
 
+    // Back: inner screens → their section → Live TV → menu → exit. Each step works even when
+    // focus could not be moved (the next Back goes on), so Back can never get stuck.
+    var backToMenuTried by remember { mutableStateOf(false) }
+    LaunchedEffect(railFocused, route) { if (!railFocused) backToMenuTried = false }
     BackHandler(enabled = !playerOpen) {
         when {
             vm.backStack.size > 2 -> vm.back()
-            route != Route.Live && !railFocused -> runCatching { railFocus.requestFocus() }
             route != Route.Live -> vm.root(Route.Live)
-            !railFocused -> runCatching { railFocus.requestFocus() }
+            !railFocused && !backToMenuTried -> {
+                backToMenuTried = true
+                runCatching { railFocus.requestFocus() }
+            }
             settings.confirmExit -> askExit = true
             else -> onExit()
         }
@@ -170,6 +178,7 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                 when (val r = route) {
                     Route.Live -> TvLiveScreen(vm)
                     Route.Guide -> GuideScreen(vm)
+                    Route.Catchup -> com.orbitplayer.ui.common.CatchupScreen(vm)
                     Route.Movies -> VodBrowseScreen(vm, series = false)
                     Route.Series -> VodBrowseScreen(vm, series = true)
                     is Route.MovieDetail -> MovieDetailScreen(vm, r.key)
@@ -242,6 +251,5 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
         }
     }
 
-    if (askExit) ConfirmDialog("Exit Orbit Player?", "Playback will stop.", "Exit", onDismiss = { askExit = false }) { onExit() }
-    LaunchedEffect(route) { railFocused = false }
+    if (askExit) ConfirmDialog("Exit Orbit Player?", "Playback will stop.", "Exit", onDismiss = { askExit = false }, focusConfirm = true) { onExit() }
 }

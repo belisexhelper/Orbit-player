@@ -1,5 +1,6 @@
 package com.orbitplayer.playback
 
+import kotlinx.coroutines.withContext
 import android.content.Context
 import android.net.Uri
 import androidx.annotation.OptIn
@@ -53,9 +54,14 @@ data class PlayItem(
     val playlistId: String = "",
     val subtitles: List<SubtitleSource> = emptyList(),
     val subtitle: String = "", // second line (programme, S01E02 …)
+    /** catch-up: the programme's time span, and where in it to start */
+    val catchupStart: Long = 0,
+    val catchupEnd: Long = 0,
+    val catchupOffset: Long = 0,
 ) {
     val isLive get() = kind == "live"
     val seekable get() = kind != "live"
+    val isCatchup get() = kind == "catchup" && catchupEnd > catchupStart
 }
 
 data class TrackOption(val groupIndex: Int, val trackIndex: Int, val label: String, val detail: String, val selected: Boolean)
@@ -108,6 +114,10 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     private var sleepJob: Job? = null
     private var previousChannelIndex = -1
     private var lastUrl = ""
+
+    /** catch-up: offset (ms from the programme start) where the current archive stream begins */
+    private var catchupOffset = 0L
+    private var catchupJob: Job? = null
     private var lastForceHls = false
 
     /** Which engine plays the current item: "exo" or "vlc". The picture view follows this. */
@@ -234,8 +244,13 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         manualEngine = null
         extraSubs = next.subtitles.toMutableList()
         _error.value = null
+        catchupOffset = next.catchupOffset
         scope.launch {
-            val url = if (next.isLive && next.channel != null) repo.channelUrl(next.channel) else next.url
+            val url = when {
+                next.isLive && next.channel != null -> repo.channelUrl(next.channel)
+                next.isCatchup && next.channel != null -> repo.catchupUrlAt(next.channel, next.catchupStart + catchupOffset, next.catchupEnd) ?: ""
+                else -> next.url
+            }
             if (url.isBlank()) {
                 _error.value = "This stream has no address"
                 return@launch
@@ -405,6 +420,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
 
     private fun onEnded() {
         val it = _item.value ?: return
+        if (it.isCatchup) return continueAfterCatchup(it)
         if (it.progressKey.isNotBlank()) markFinished(it)
         if (it.kind == "episode" && settings.autoPlayNext && _index.value < _queue.value.size - 1) {
             start(_index.value + 1)
@@ -455,13 +471,67 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     }
 
     fun seekBy(ms: Long) {
+        val cur = _item.value
+        if (cur?.isCatchup == true) {
+            // the archive can only start at whole minutes: forward goes to the next minute, back to the previous one
+            val target = positionMs + ms
+            val minute = 60_000L
+            catchupSeek(if (ms > 0) (target + minute - 1) / minute * minute else target / minute * minute)
+            return
+        }
         if (_item.value?.seekable != true) return
         val dur = durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE
         seekTo((positionMs + ms).coerceIn(0, dur))
     }
 
     fun seekTo(ms: Long) {
+        if (_item.value?.isCatchup == true) {
+            catchupSeek(ms / 60_000L * 60_000L)
+            return
+        }
         if (usingVlc) vlc.seekTo(ms) else built?.seekTo(ms.coerceAtLeast(0))
+    }
+
+    /** Catch-up "seek": asks the server for the archive from a new point of the programme */
+    private fun catchupSeek(offsetMs: Long) {
+        val it = _item.value ?: return
+        val ch = it.channel ?: return
+        val maxOffset = (minOf(it.catchupEnd, System.currentTimeMillis()) - it.catchupStart - 60_000L).coerceAtLeast(0)
+        val offset = offsetMs.coerceIn(0, maxOffset)
+        catchupOffset = offset
+        retries = 0
+        _error.value = null
+        catchupJob?.cancel()
+        catchupJob = scope.launch {
+            delay(350) // several quick presses = one request
+            val url = repo.catchupUrlAt(ch, it.catchupStart + offset, it.catchupEnd) ?: return@launch
+            if (_item.value === it) prepare(url, 0)
+        }
+    }
+
+    /** Catch-up of a programme, from its start (or [offsetMs] into it) */
+    fun playCatchup(ch: ChannelEntity, title: String, programTitle: String, start: Long, stop: Long, offsetMs: Long = 0) {
+        play(
+            PlayItem(
+                kind = "catchup", title = title, subtitle = programTitle, poster = ch.logo, channel = ch, playlistId = ch.playlistId,
+                catchupStart = start, catchupEnd = stop, catchupOffset = (offsetMs / 60_000L * 60_000L).coerceAtLeast(0),
+            ),
+        )
+    }
+
+    /** End of an archived programme: continue with the next one, or with live TV when that is on now */
+    private fun continueAfterCatchup(it: PlayItem) {
+        val ch = it.channel ?: return
+        scope.launch {
+            val now = System.currentTimeMillis()
+            val next = if (ch.epgKey.isBlank()) null else withContext(Dispatchers.IO) {
+                repo.db.epg().programs(ch.epgKey, it.catchupEnd - 60_000L, it.catchupEnd + 6 * 3600_000L).firstOrNull { p -> p.start >= it.catchupEnd - 60_000L }
+            }
+            when {
+                next != null && next.stop <= now -> playCatchup(ch, it.title, next.title, next.start, next.stop)
+                else -> play(PlayItem(kind = "live", title = it.title, channel = ch, poster = ch.logo, playlistId = ch.playlistId))
+            }
+        }
     }
 
     fun stop() {
@@ -584,8 +654,10 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
     }
 
-    val positionMs: Long get() = if (usingVlc) vlc.positionMs else built?.currentPosition ?: 0
-    val durationMs: Long get() = if (usingVlc) vlc.durationMs else built?.duration?.takeIf { it > 0 } ?: 0
+    private val enginePositionMs: Long get() = if (usingVlc) vlc.positionMs else built?.currentPosition ?: 0
+    val positionMs: Long get() = if (_item.value?.isCatchup == true) catchupOffset + enginePositionMs else enginePositionMs
+    val durationMs: Long get() = _item.value?.takeIf { it.isCatchup }?.let { it.catchupEnd - it.catchupStart }
+        ?: if (usingVlc) vlc.durationMs else built?.duration?.takeIf { it > 0 } ?: 0
     val bufferedMs: Long get() = if (usingVlc) vlc.positionMs else built?.bufferedPosition ?: 0
 
     /** Video info for the banner: "1920×1080 · 25 fps" */

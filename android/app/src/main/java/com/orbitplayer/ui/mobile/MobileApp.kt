@@ -199,6 +199,7 @@ private fun MobileContent(vm: AppViewModel, wide: Boolean) {
         Route.Live -> MobileLive(vm, wide)
         Route.ChannelView -> if (wide) MobileLive(vm, wide = true) else ChannelView(vm, wide = false)
         Route.Guide -> GuideScreen(vm)
+        Route.Catchup -> com.orbitplayer.ui.common.CatchupScreen(vm)
         Route.Movies -> VodBrowseScreen(vm, series = false)
         Route.Series -> VodBrowseScreen(vm, series = true)
         is Route.MovieDetail -> MovieDetailScreen(vm, r.key)
@@ -323,6 +324,7 @@ fun MobileHomeContent(
         }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                IconAction(Icons.Filled.History, "Catch-up") { onRoute(Route.Catchup) }
                 IconAction(Icons.Filled.Star, "Favorites") { onRoute(Route.Favorites) }
                 IconAction(Icons.Filled.Download, "Downloads") { onRoute(Route.Downloads) }
                 IconAction(Icons.Filled.Speed, "Speed test") { onRoute(Route.SpeedTest) }

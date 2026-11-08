@@ -38,6 +38,7 @@ sealed class Route {
     data object Home : Route()
     data object Live : Route()
     data object Guide : Route()
+    data object Catchup : Route()
     data object Movies : Route()
     data object Series : Route()
     data class MovieDetail(val key: String) : Route()
@@ -241,9 +242,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (fullscreen) playerOpen.value = true
     }
 
-    fun playCatchup(ch: ChannelEntity, prog: ProgramEntity) = viewModelScope.launch {
-        val url = repo.catchupUrl(ch, prog) ?: return@launch toast("This channel has no archive")
-        playback.play(PlayItem(kind = "catchup", title = displayName(ch), subtitle = prog.title, url = url, poster = ch.logo, channel = ch, playlistId = ch.playlistId))
+    fun playCatchup(ch: ChannelEntity, prog: ProgramEntity, offsetMs: Long = 0) {
+        if (!ch.archive) return toast("This channel has no archive")
+        playback.playCatchup(ch, displayName(ch), prog.title, prog.start, prog.stop, offsetMs)
+        playerOpen.value = true
+    }
+
+    /** Live channel with an archive: watch the current programme from its beginning */
+    fun startOver(ch: ChannelEntity) = viewModelScope.launch {
+        val now = System.currentTimeMillis()
+        val p = loadNowNext(listOf(ch.epgKey))[ch.epgKey]?.now
+        if (p != null) playCatchup(ch, p)
+        else playCatchup(ch, ProgramEntity(0, ch.epgKey, ch.playlistId, now / 3600_000L * 3600_000L, now / 3600_000L * 3600_000L + 3600_000L, "Archive", ""))
+    }
+
+    /** Live channel with an archive: go back in time by [ms] (rewind) */
+    fun rewindLive(ch: ChannelEntity, ms: Long) = viewModelScope.launch {
+        val now = System.currentTimeMillis()
+        val target = now - ms
+        val p = programs(ch, target - 6 * 3600_000L, target + 60_000L).lastOrNull { it.start <= target && it.stop > target }
+        val start = p?.start ?: (target / 3600_000L * 3600_000L)
+        val stop = p?.stop ?: (start + 3600_000L)
+        playback.playCatchup(ch, displayName(ch), p?.title ?: "Archive", start, stop, target - start)
         playerOpen.value = true
     }
 

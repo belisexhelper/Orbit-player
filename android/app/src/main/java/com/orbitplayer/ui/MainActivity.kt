@@ -84,6 +84,8 @@ class MainActivity : ComponentActivity() {
     private fun exitApp() {
         vm.playback.stop()
         finishAndRemoveTask()
+        // really close: nothing keeps running in the background after "Exit"
+        window.decorView.postDelayed({ android.os.Process.killProcess(android.os.Process.myPid()) }, 400)
     }
 
     private fun setFullscreen(on: Boolean) {

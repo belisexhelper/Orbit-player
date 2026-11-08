@@ -428,14 +428,17 @@ class ContentRepository(private val context: Context, val db: AppDatabase, priva
     }
 
     /** Recording of a past programme (catch-up) */
-    suspend fun catchupUrl(ch: ChannelEntity, prog: ProgramEntity): String? {
+    suspend fun catchupUrl(ch: ChannelEntity, prog: ProgramEntity): String? = catchupUrlAt(ch, prog.start, prog.stop)
+
+    /** Archive address for the time span [start, stop) of a channel (minute precision) */
+    suspend fun catchupUrlAt(ch: ChannelEntity, start: Long, stop: Long): String? {
         if (!ch.archive) return null
         val p = db.playlists().get(ch.playlistId) ?: return null
-        val durMin = ((prog.stop - prog.start) / 60_000).toInt().coerceAtLeast(1)
-        if (p.type == "xtream") return xtream(p).timeshiftUrl(ch.streamId, prog.start, durMin, p.serverTimezone)
+        val durMin = ((stop - start) / 60_000).toInt().coerceAtLeast(1)
+        if (p.type == "xtream") return xtream(p).timeshiftUrl(ch.streamId, start, durMin, p.serverTimezone)
         if (ch.catchupSource.isNotBlank()) {
-            val startSec = prog.start / 1000
-            val endSec = prog.stop / 1000
+            val startSec = start / 1000
+            val endSec = stop / 1000
             var src = ch.catchupSource
                 .replace("{utc}", startSec.toString())
                 .replace("\${start}", startSec.toString())
@@ -447,7 +450,7 @@ class ContentRepository(private val context: Context, val db: AppDatabase, priva
             return src
         }
         val sep = if (ch.url.contains('?')) "&" else "?"
-        return "${ch.url}${sep}utc=${prog.start / 1000}&lutc=${System.currentTimeMillis() / 1000}"
+        return "${ch.url}${sep}utc=${start / 1000}&lutc=${System.currentTimeMillis() / 1000}"
     }
 
     suspend fun vodUrl(v: VodEntity): String {

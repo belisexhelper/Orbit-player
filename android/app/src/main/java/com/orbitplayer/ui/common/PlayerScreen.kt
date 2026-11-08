@@ -1,5 +1,7 @@
 package com.orbitplayer.ui.common
 
+import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.ui.focus.onFocusChanged
 import android.app.Activity
 import android.content.Context
@@ -258,6 +260,10 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
                         onTogglePause = { pb.togglePause(); controls = true; touch() },
                         onCommitDigits = { if (digits.isNotEmpty()) { commitNumber(vm, digits); digits = "" } },
                         hasDigits = digits.isNotEmpty(),
+                        onRewindLive = {
+                            val ch = cur?.channel
+                            if (ch?.archive == true) vm.rewindLive(ch, 60_000) else vm.toast("This channel has no archive")
+                        },
                     )
                 }
                 .focusable()
@@ -364,6 +370,7 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
                             vm.root(com.orbitplayer.ui.Route.Guide)
                         }
                         "retry" -> pb.retry()
+                        "startover" -> channel?.let { vm.startOver(it) }
                         "engine" -> switchEngine(vm)
                         "external" -> openExternal(context, vm, cur)
                     }
@@ -450,6 +457,7 @@ private fun handleKey(
     onTogglePause: () -> Unit,
     onCommitDigits: () -> Unit,
     hasDigits: Boolean,
+    onRewindLive: () -> Unit = {},
 ): Boolean {
     if (!tv || item == null) return false
     val live = item.isLive
@@ -476,7 +484,7 @@ private fun handleKey(
         AKeyEvent.KEYCODE_DPAD_DOWN, AKeyEvent.KEYCODE_CHANNEL_DOWN -> if (live) onZap(-1) else onControls()
         AKeyEvent.KEYCODE_DPAD_LEFT -> if (live) onChannels() else onSeek(-10_000)
         AKeyEvent.KEYCODE_DPAD_RIGHT -> if (live) onPrevious() else onSeek(10_000)
-        AKeyEvent.KEYCODE_MEDIA_REWIND -> onSeek(-30_000)
+        AKeyEvent.KEYCODE_MEDIA_REWIND -> if (live) onRewindLive() else onSeek(-30_000)
         AKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> onSeek(30_000)
         AKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, AKeyEvent.KEYCODE_MEDIA_PLAY, AKeyEvent.KEYCODE_MEDIA_PAUSE, AKeyEvent.KEYCODE_SPACE -> onTogglePause()
         AKeyEvent.KEYCODE_MENU -> onOptions()
@@ -628,16 +636,21 @@ private fun ChannelListPanel(vm: AppViewModel, onPick: (ChannelEntity, List<Chan
     val list = remember(all, group) { vm.channelsOf(all, group) }
     val nowNext by produceState(emptyMap<String, NowNext>(), list) { value = vm.loadNowNext(list.map { it.epgKey }) }
     val playingIdx = list.indexOfFirst { it.key == playing?.channel?.key }.coerceAtLeast(0)
-    val state = rememberLazyListState((playingIdx - 4).coerceAtLeast(0))
+    val state = remember(group) { androidx.compose.foundation.lazy.LazyListState((playingIdx - 4).coerceAtLeast(0)) }
+    val groupIdx = groups.indexOfFirst { it.id == group }.coerceAtLeast(0)
+    val groupState = remember(showGroups) { androidx.compose.foundation.lazy.LazyListState((groupIdx - 3).coerceAtLeast(0)) }
     val chFocus = remember { FocusRequester() }
     val grFocus = remember { FocusRequester() }
     LaunchedEffect(showGroups, group) {
-        delay(60)
-        runCatching { if (showGroups) grFocus.requestFocus() else chFocus.requestFocus() }
+        // the list may need a frame or two before the target row exists: try a few times
+        repeat(6) {
+            delay(50)
+            if (runCatching { if (showGroups) grFocus.requestFocus() else chFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+        }
     }
     Row(Modifier.fillMaxHeight().background(Color(0xF2121826))) {
         if (showGroups || !tv) {
-            LazyColumn(Modifier.width(if (tv) 240.dp else 170.dp).fillMaxHeight().padding(8.dp)) {
+            LazyColumn(Modifier.width(if (tv) 240.dp else 170.dp).fillMaxHeight().padding(8.dp), state = groupState) {
                 itemsIndexed(groups, key = { _, g -> g.id }) { _, g ->
                     ListRow(
                         title = g.name,
@@ -690,6 +703,7 @@ private fun OptionsBar(item: PlayItem, favorite: Boolean, aspect: String, engine
             IconAction(Icons.Filled.AspectRatio, when (aspect) { "fill" -> "Stretch"; "zoom" -> "Zoom"; else -> "Fit" }) { onAction("aspect") }
             IconAction(Icons.Filled.Bedtime, "Sleep") { onAction("sleep") }
             if (item.isLive) IconAction(if (favorite) Icons.Filled.Star else Icons.Filled.StarBorder, if (favorite) "Unfavorite" else "Favorite", active = favorite) { onAction("fav") }
+            if (item.isLive && item.channel?.archive == true) IconAction(Icons.Filled.Replay, "Start over") { onAction("startover") }
             if (item.isLive) IconAction(Icons.Filled.DateRange, "TV guide") { onAction("guide") }
             IconAction(Icons.Filled.Refresh, "Reload") { onAction("retry") }
             IconAction(Icons.Filled.SwapHoriz, if (engine == "vlc") "Engine: VLC" else "Engine: Exo") { onAction("engine") }
@@ -762,6 +776,7 @@ private fun BoxScope.TvVodControls(vm: AppViewModel, item: PlayItem, now: Long, 
             IconAction(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (playing) "Pause" else "Play", focusRequester = playFocus) { pb.togglePause() }
             IconAction(Icons.Filled.Forward10, "+10 s") { pb.seekBy(10_000) }
             if (item.kind == "episode" && index < queue.size - 1) IconAction(Icons.Filled.SkipNext, "Next episode") { pb.start(index + 1) }
+            if (item.isCatchup) item.channel?.let { ch -> IconAction(Icons.Filled.LiveTv, "Back to live") { vm.playChannel(ch, listOf(ch)) } }
             Spacer(Modifier.width(24.dp))
             IconAction(Icons.Filled.Audiotrack, "Audio") { onPicker(Picker.Audio) }
             IconAction(Icons.Filled.ClosedCaption, "Subtitles") { onPicker(Picker.Subtitles) }
@@ -856,6 +871,8 @@ private fun PhoneControls(
                 IconAction(Icons.Filled.AspectRatio, "Picture", tint = Color.White) { onPicker(Picker.Aspect) }
                 IconAction(Icons.Filled.Bedtime, "Sleep", tint = Color.White) { onPicker(Picker.Sleep) }
                 if (item.kind == "episode" && index < queue.size - 1) IconAction(Icons.Filled.SkipNext, "Next", tint = Color.White) { pb.start(index + 1) }
+                if (item.isLive && item.channel?.archive == true) IconAction(Icons.Filled.Replay, "Start over", tint = Color.White) { item.channel?.let { vm.startOver(it) } }
+                if (item.isCatchup) item.channel?.let { ch -> IconAction(Icons.Filled.LiveTv, "Live", tint = Color.White) { vm.playChannel(ch, listOf(ch), fullscreen = true) } }
                 if (item.isLive && item.channel?.archive == true) IconAction(Icons.Filled.History, "Archive", tint = Color.White) {
                     vm.channelViewGuide = true
                     vm.leavePlayer(tv = false)

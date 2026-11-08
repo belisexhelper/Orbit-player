@@ -221,7 +221,7 @@ fun SectionContent(vm: AppViewModel, id: String) {
                 }
                 if (tv) item { ToggleRow("Live preview", s.livePreview, "Plays the highlighted channel in the top window of Live TV") { v -> set { it.copy(livePreview = v) } } }
                 item { ToggleRow("Show channel numbers", s.showChannelNumbers) { v -> set { it.copy(showChannelNumbers = v) } } }
-                item { ToggleRow("Hide country in channel names", s.cleanChannelNames, "Shows “RTS 1” instead of “RS: RTS 1 FHD”. Off shows the full name from the playlist.") { v -> set { it.copy(cleanChannelNames = v) } } }
+                item { ToggleRow("Hide country in channel names", s.cleanChannelNames) { v -> set { it.copy(cleanChannelNames = v) } } }
                 item {
                     SettingRow("Channel info banner", "${s.bannerSeconds} s") {
                         choice = ChoiceSpec("Banner on channel change", listOf(2, 3, 4, 6, 8, 10).map { "$it" to "$it seconds" }, "${s.bannerSeconds}") { v -> set { it.copy(bannerSeconds = v.toInt()) } }

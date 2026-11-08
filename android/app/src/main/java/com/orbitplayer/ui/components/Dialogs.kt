@@ -86,7 +86,7 @@ fun ChoiceDialog(title: String, options: List<Pair<String, String>>, selected: S
     }
     LaunchedEffect(Unit) {
         delay(80)
-        runCatching { first.requestFocus() }
+        runCatching { (if (focusConfirm) second else first).requestFocus() }
     }
 }
 
@@ -117,13 +117,14 @@ fun ActionsDialog(title: String, actions: List<MenuAction>, onDismiss: () -> Uni
 }
 
 @Composable
-fun ConfirmDialog(title: String, text: String, confirm: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+fun ConfirmDialog(title: String, text: String, confirm: String, onDismiss: () -> Unit, focusConfirm: Boolean = false, onConfirm: () -> Unit) {
     val first = remember { FocusRequester() }
+    val second = remember { FocusRequester() }
     OrbitDialog(onDismiss, title) {
         Text(text, Modifier.padding(12.dp), color = Orbit.colors.textMuted, style = MaterialTheme.typography.bodyLarge)
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
             OrbitButton("Cancel", focusRequester = first) { onDismiss() }
-            OrbitButton(confirm, primary = true) {
+            OrbitButton(confirm, primary = true, focusRequester = second) {
                 onDismiss()
                 onConfirm()
             }

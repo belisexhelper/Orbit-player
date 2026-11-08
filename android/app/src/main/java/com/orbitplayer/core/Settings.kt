@@ -37,9 +37,9 @@ data class AppSettings(
     // Data
     val playlistRefreshHours: Int = 24,
     val epgRefreshHours: Int = 12,
-    val epgPastDays: Int = 1,
+    val epgPastDays: Int = 3,
     // Startup
-    val startOnLastChannel: Boolean = true,
+    val startOnLastChannel: Boolean = false,
     val autostartOnBoot: Boolean = false,
     val autoUpdateCheck: Boolean = true,
     val confirmExit: Boolean = true,
@@ -62,8 +62,8 @@ data class AppSettings(
         .put("subtitlesByDefault", subtitlesByDefault).put("subtitleLanguage", subtitleLanguage)
         .put("subtitleSize", subtitleSize).put("subtitleBackground", subtitleBackground)
         .put("parentalPin", parentalPin).put("hideAdult", hideAdult).put("adultKeywords", adultKeywords)
-        .put("playlistRefreshHours", playlistRefreshHours).put("epgRefreshHours", epgRefreshHours).put("epgPastDays", epgPastDays)
-        .put("startOnLastChannel", startOnLastChannel).put("autostartOnBoot", autostartOnBoot).put("confirmExit", confirmExit).put("autoUpdateCheck", autoUpdateCheck)
+        .put("playlistRefreshHours", playlistRefreshHours).put("epgRefreshHours", epgRefreshHours).put("epgKeepPastDays", epgPastDays)
+        .put("playLastChannelOnStart", startOnLastChannel).put("autostartOnBoot", autostartOnBoot).put("confirmExit", confirmExit).put("autoUpdateCheck", autoUpdateCheck)
 
     companion object {
         fun fromJson(o: JSONObject, defaults: AppSettings = AppSettings()): AppSettings = defaults.copy(
@@ -89,8 +89,8 @@ data class AppSettings(
             adultKeywords = o.optString("adultKeywords", defaults.adultKeywords),
             playlistRefreshHours = o.optInt("playlistRefreshHours", defaults.playlistRefreshHours).coerceIn(1, 24 * 14),
             epgRefreshHours = o.optInt("epgRefreshHours", defaults.epgRefreshHours).coerceIn(1, 24 * 7),
-            epgPastDays = o.optInt("epgPastDays", defaults.epgPastDays).coerceIn(0, 14),
-            startOnLastChannel = o.optBoolean("startOnLastChannel", defaults.startOnLastChannel),
+            epgPastDays = o.optInt("epgKeepPastDays", defaults.epgPastDays).coerceIn(0, 14),
+            startOnLastChannel = o.optBoolean("playLastChannelOnStart", defaults.startOnLastChannel),
             autostartOnBoot = o.optBoolean("autostartOnBoot", defaults.autostartOnBoot),
             confirmExit = o.optBoolean("confirmExit", defaults.confirmExit),
             autoUpdateCheck = o.optBoolean("autoUpdateCheck", defaults.autoUpdateCheck),

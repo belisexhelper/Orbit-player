@@ -330,22 +330,23 @@ fun OrbitButton(
     onClick: () -> Unit,
 ) {
     val c = Orbit.colors
-    val bg = if (primary) c.accent else c.surfaceFocus
-    val fg = if (primary) c.onAccent else c.text
-    // Focused buttons turn white with dark text, so it is always obvious which one OK will press
-    val focusBg = Color.White
-    val focusFg = Color(0xFF0F1420)
+    val tv = LocalIsTv.current
+    // TV: every button is white; the focused one turns blue, so it is always obvious what OK presses.
+    // A "primary"/selected button keeps a blue outline while not focused.
+    // Phone (touch, no focus): blue = primary/selected, grey = other.
+    val bg = if (tv) Color.White else if (primary) c.accent else c.surfaceFocus
+    val fg = if (tv) Color(0xFF0F1420) else if (primary) c.onAccent else c.text
     Focusable(
         onClick = { if (enabled) onClick() },
-        modifier = modifier,
+        modifier = modifier.then(if (tv && primary) Modifier.border(2.dp, c.accent, RoundedCornerShape(10.dp)) else Modifier),
         shape = RoundedCornerShape(10.dp),
         color = if (enabled) bg else bg.copy(alpha = 0.45f),
-        focusedColor = focusBg,
+        focusedColor = c.accent,
         scaleOnFocus = 1.08f,
         border = false,
         focusRequester = focusRequester,
     ) { focused ->
-        val tint = if (focused) focusFg else fg
+        val tint = if (focused) Color.White else fg
         Row(Modifier.padding(horizontal = 18.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (icon != null) Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
             Text(label, color = tint, style = MaterialTheme.typography.labelLarge, fontWeight = if (focused) FontWeight.Bold else null, maxLines = 1)

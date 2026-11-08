@@ -244,7 +244,10 @@ fun EpgGrid(
                 }
             }
             Box(Modifier.fillMaxSize()) {
+                // a different channel list (another group) starts at the top
+                val listState = remember(channels.firstOrNull()?.key, channels.size) { androidx.compose.foundation.lazy.LazyListState() }
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .fillMaxSize()
                         .focusGroup()

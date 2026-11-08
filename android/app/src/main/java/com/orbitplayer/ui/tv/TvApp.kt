@@ -133,14 +133,14 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
         runCatching { contentFocus.requestFocus() }
     }
 
-    // Back: inner screens → their section → Live TV → menu → exit. Each step works even when
-    // focus could not be moved (the next Back goes on), so Back can never get stuck.
+    // Back: inner screens → their section; in a section → the menu → exit. (A screen can take one
+    // step itself first, e.g. Catch-up: programmes → groups.) Each step works even when focus could
+    // not be moved (the next Back goes on), so Back can never get stuck.
     var backToMenuTried by remember { mutableStateOf(false) }
     LaunchedEffect(railFocused, route) { if (!railFocused) backToMenuTried = false }
     BackHandler(enabled = !playerOpen) {
         when {
             vm.backStack.size > 2 -> vm.back()
-            route != Route.Live -> vm.root(Route.Live)
             !railFocused && !backToMenuTried -> {
                 backToMenuTried = true
                 runCatching { railFocus.requestFocus() }
@@ -249,5 +249,5 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
         }
     }
 
-    if (askExit) ConfirmDialog("Exit Orbit Player?", "Playback will stop.", "Exit", onDismiss = { askExit = false }, focusConfirm = true) { onExit() }
+    if (askExit) ConfirmDialog("Exit Orbit Player?", "Playback will stop.", "Exit", onDismiss = { askExit = false }) { onExit() }
 }

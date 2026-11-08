@@ -681,7 +681,10 @@ private fun ChannelListPanel(vm: AppViewModel, onPick: (ChannelEntity, List<Chan
                         modifier = Modifier.onPreviewKeyEvent { e ->
                             if (tv && e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) { showGroups = true; true } else false
                         },
-                    ) { onPick(ch, list) }
+                    ) {
+                        if (group != vm.selectedGroup.value) vm.selectGroup(group)
+                        onPick(ch, list)
+                    }
                 }
             }
         }

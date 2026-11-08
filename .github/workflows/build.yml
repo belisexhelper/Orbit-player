@@ -55,6 +55,8 @@ jobs:
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           mkdir -p out
           cp $(find app/build/outputs/apk/release -name "*.apk" | head -1) "out/orbit-player-${VERSION}-${VERSION_CODE}.apk"
+          # same file under a name that never changes: a fixed download link to the newest build
+          cp "out/orbit-player-${VERSION}-${VERSION_CODE}.apk" out/orbit-player.apk
           ls -la out
 
       - uses: actions/upload-artifact@v4

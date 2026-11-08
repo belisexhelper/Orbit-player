@@ -65,6 +65,7 @@ import com.orbitplayer.ui.theme.Orbit
  * For focusProperties { exit = ... }: blocks only the arrow keys. Other directions (focus requested
  * from code, Back to the menu, dialogs) must pass, otherwise focus gets stuck.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun arrowExit(d: androidx.compose.ui.focus.FocusDirection, left: FocusRequester? = null, right: FocusRequester? = null): FocusRequester = when (d) {
     androidx.compose.ui.focus.FocusDirection.Left -> left ?: FocusRequester.Cancel
     androidx.compose.ui.focus.FocusDirection.Right -> right ?: FocusRequester.Cancel

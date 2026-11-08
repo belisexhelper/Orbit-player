@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -163,6 +164,9 @@ fun OrbitTextField(
 ) {
     // passwords are visible by default (easier to type with a remote); the eye hides them
     var hidden by remember { mutableStateOf(false) }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val tv = com.orbitplayer.core.DeviceInfo.isTv(androidx.compose.ui.platform.LocalContext.current)
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
@@ -178,10 +182,34 @@ fun OrbitTextField(
                 )
             }
         }) else null,
-        keyboardOptions = KeyboardOptions(keyboardType = if (password && hidden) KeyboardType.Password else keyboard, autoCorrectEnabled = false),
-        keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }, onGo = { onDone?.invoke() }, onSearch = { onDone?.invoke() }),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = if (password && hidden) KeyboardType.Password else keyboard,
+            autoCorrectEnabled = false,
+            // a form: the keyboard's button goes on to the next field; a single field (search, dialog): done
+            imeAction = if (onDone != null) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Next,
+        ),
+        keyboardActions = KeyboardActions(
+            onDone = { onDone?.invoke() },
+            onGo = { onDone?.invoke() },
+            onSearch = { onDone?.invoke() },
+            onNext = { keyboardController?.hide(); focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down) },
+        ),
         colors = orbitFieldColors(),
-        modifier = (if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier).fillMaxWidth(),
+        modifier = (if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier).fillMaxWidth()
+            .onPreviewKeyEvent { e ->
+                // remote: up/down always leave the field (also when the keyboard was closed with Back),
+                // OK opens the keyboard again; left/right still move the cursor
+                val code = e.nativeKeyEvent.keyCode
+                val down = e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown
+                when (code) {
+                    android.view.KeyEvent.KEYCODE_DPAD_DOWN -> { if (down) { keyboardController?.hide(); focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down) }; true }
+                    android.view.KeyEvent.KEYCODE_DPAD_UP -> { if (down) { keyboardController?.hide(); focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Up) }; true }
+                    android.view.KeyEvent.KEYCODE_DPAD_CENTER -> { if (!down) keyboardController?.show(); true }
+                    android.view.KeyEvent.KEYCODE_ENTER, android.view.KeyEvent.KEYCODE_NUMPAD_ENTER ->
+                        if (tv) { if (!down) keyboardController?.show(); true } else false
+                    else -> false
+                }
+            },
     )
 }
 

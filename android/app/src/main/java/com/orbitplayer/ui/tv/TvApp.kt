@@ -173,7 +173,9 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
     var beforePlayer by remember { mutableStateOf<FocusRequester?>(null) }
     DisposableEffect(vm) {
         vm.beforePlayerCloses = {
-            val saved = beforePlayer
+            // Live TV: the channel that is playing (it may differ after zapping); elsewhere: the element used before
+            val liveEntry = if (vm.route == Route.Live) entry.requester else null
+            val saved = liveEntry ?: beforePlayer
             val ok = saved != null && runCatching { saved.requestFocus() }.isSuccess
             if (!ok) {
                 val e = entry.requester

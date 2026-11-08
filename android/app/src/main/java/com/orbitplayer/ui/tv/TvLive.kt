@@ -186,11 +186,21 @@ fun TvLiveContent(
         if (g.id != selectedGroup) onGroupFocus(g)
     }
     LaunchedEffect(selectedGroup) { listState.scrollToItem((start - 3).coerceAtLeast(0)) }
+    // keep the playing channel on screen (it changes when zapping in the player), so it can get focus
+    LaunchedEffect(playingKey, channels.size) {
+        if (playingKey == null || channels.isEmpty()) return@LaunchedEffect
+        val visible = listState.layoutInfo.visibleItemsInfo
+        if (visible.size < 3 || visible.none { it.index == start } || visible.first().index == start || visible.last().index == start) {
+            listState.scrollToItem((start - 3).coerceAtLeast(0))
+        }
+    }
     LaunchedEffect(refocusKey, channels.isNotEmpty()) {
-        // refocus the channel when the player closes; never while it is open (it would take the remote away from it)
+        // refocus the playing channel when the player closes; never while it is open (it would take the remote away from it)
         if (channels.isEmpty() || refocusKey == true) return@LaunchedEffect
-        delay(120)
-        runCatching { firstFocus.requestFocus() }
+        repeat(6) {
+            delay(60)
+            if (runCatching { firstFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 24.dp, top = 20.dp)) {

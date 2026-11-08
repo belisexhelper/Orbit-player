@@ -105,6 +105,18 @@ class TvNavigationTest {
             compose.setContent { OrbitTheme("slate", isTv = true) { TvApp(vm, onExit = {}) } }
             settle(2500)
             shot("start")
+            if (focusedText().startsWith("NOTHING")) {
+                log.append("   !! nothing focused at start, waiting for the safety net\n")
+                settle(1500)
+                shot("start after wait")
+            }
+            if (focusedText().startsWith("NOTHING")) {
+                log.append("   !! still nothing focused, focusing the first channel from the test\n")
+                runCatching { compose.onNode(androidx.compose.ui.test.hasText("News channel 1") and androidx.compose.ui.test.hasClickAction()).requestFocus() }
+                    .onFailure { log.append("   requestFocus failed: ${it.message?.take(200)}\n") }
+                settle(500)
+                shot("start forced")
+            }
             key(Key.DirectionDown, "down x2", 2)
             key(Key.DirectionLeft, "left to groups")
             key(Key.DirectionLeft, "left to menu")

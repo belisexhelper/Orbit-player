@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.orbitplayer.ui.AppViewModel
+import kotlinx.coroutines.delay
 import com.orbitplayer.ui.Route
 import com.orbitplayer.ui.common.AddPlaylistScreen
 import com.orbitplayer.ui.common.DiagnosticsScreen
@@ -142,7 +143,18 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Orbit.colors.background)) {
+    // Safety net: with a remote, "nothing focused" means the user is stuck (keys go nowhere).
+    // If that happens outside the player, focus the screen's start point or the menu.
+    var anyFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(anyFocus, playerOpen, route) {
+        if (anyFocus || playerOpen) return@LaunchedEffect
+        delay(700)
+        if (anyFocus || vm.playerOpen.value) return@LaunchedEffect
+        val t = entry.requester
+        if (t == null || runCatching { t.requestFocus() }.isFailure) runCatching { railFocus.requestFocus() }
+    }
+
+    Box(Modifier.fillMaxSize().background(Orbit.colors.background).onFocusChanged { anyFocus = it.hasFocus }) {
         Row(Modifier.fillMaxSize()) {
             Spacer(Modifier.width(RAIL_COLLAPSED))
             // Content: Left from its left edge goes to the menu; focus never wanders off in other directions.

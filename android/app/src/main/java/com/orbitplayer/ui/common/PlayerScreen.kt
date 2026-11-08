@@ -731,22 +731,21 @@ private fun BoxScope.TvLivePanel(vm: AppViewModel, item: PlayItem, nn: NowNext?,
                         }
                     },
                     onLongClick = { if (isNow && archived) vm.playCatchup(ch, p) },
-                    modifier = Modifier.width(220.dp),
+                    modifier = Modifier.width(240.dp),
                     color = if (watching) c.accent.copy(alpha = 0.22f) else Color(0xCC1E2533),
                     scaleOnFocus = 1.05f,
                 ) { f ->
                     Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                (if (p.start < System.currentTimeMillis() - 86_400_000L || p.start >= System.currentTimeMillis() + 86_400_000L) Fmt.date(p.start) + "  " else "") + Fmt.time(p.start),
-                                Modifier.weight(1f), color = if (isNow) c.accent else c.textMuted, style = MaterialTheme.typography.labelLarge, maxLines = 1,
-                            )
+                            Text(p.title, Modifier.weight(1f), color = if (!past && !isNow) c.textMuted else Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (f || isNow) FontWeight.SemiBold else FontWeight.Normal)
                             when {
-                                isNow -> Text("LIVE", Modifier.background(c.live, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                archived -> Icon(Icons.Filled.History, "From the archive", Modifier.size(16.dp), tint = c.accentAlt)
+                                isNow -> Text("LIVE", Modifier.padding(start = 6.dp).background(c.live, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                archived -> Icon(Icons.Filled.History, "From the archive", Modifier.padding(start = 6.dp).size(16.dp), tint = c.accentAlt)
                             }
                         }
-                        Text(p.title, color = if (!past && !isNow) c.textMuted else Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (f) FontWeight.SemiBold else FontWeight.Normal)
+                        val dayStart = java.util.Calendar.getInstance().apply { set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0) }.timeInMillis
+                        val dayText = when ((Math.floorDiv(p.start - dayStart, 86_400_000L)).toInt()) { 0 -> "Today"; -1 -> "Yesterday"; 1 -> "Tomorrow"; else -> Fmt.date(p.start) }
+                        Text("$dayText  //  ${Fmt.time(p.start)} – ${Fmt.time(p.stop)}", color = if (isNow) c.accent else c.textMuted, style = MaterialTheme.typography.labelMedium, maxLines = 1)
                         if (isNow) ProgressLine(((now - p.start).toFloat() / (p.stop - p.start)).coerceIn(0f, 1f), Modifier.fillMaxWidth().padding(top = 5.dp), height = 3.dp)
                     }
                 }

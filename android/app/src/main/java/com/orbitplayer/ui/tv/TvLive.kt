@@ -4,6 +4,18 @@ import com.orbitplayer.ui.components.listItemFocus
 import com.orbitplayer.ui.components.restoreListFocus
 import com.orbitplayer.ui.components.rememberListFocus
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -156,12 +168,22 @@ fun TvLiveScreen(vm: AppViewModel) {
     }
 }
 
+/** Height of one row in every column, so the chosen rows of all columns sit on the same line */
+private val ROW = 46.dp
+
+/** Keeps the focused row of a list on the middle line (EON style): the list moves, the focus stays put */
+@OptIn(ExperimentalFoundationApi::class)
+private object CenterPivot : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+        offset - (containerSize - size) / 2f
+}
+
 /**
- * Stateless layout of the Live screen (also used for screenshots):
- * groups | channels | programmes of the focused channel (days back and ahead), so going back in time
- * starts right here: a past programme with ↺ plays from the archive.
+ * Stateless layout of the Live screen (also used for screenshots), EON style:
+ * groups | channels | days | programmes, the chosen row of every column on one line across the screen,
+ * the focused channel playing behind it all. A past programme with ↺ plays from the archive.
  */
-@OptIn(ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun TvLiveContent(
     groups: List<ChannelGroup>,
@@ -187,38 +209,36 @@ fun TvLiveContent(
 ) {
     val c = Orbit.colors
     val start = channels.indexOfFirst { it.key == playingKey }.coerceAtLeast(0)
-    val listState = rememberLazyListState((start - 3).coerceAtLeast(0))
+    val listState = rememberLazyListState(start)
     val firstFocus = remember { FocusRequester() }
     val groupFocus = rememberListFocus()
     val channelFocus = rememberListFocus()
+    val dayFocus = rememberListFocus()
+    val progFocus = rememberListFocus()
+    var channelsHaveFocus by remember { mutableStateOf(false) }
     // coming from the menu or back from the player: the channel that is playing
     if (channels.isNotEmpty()) {
         TvEntryPoint(firstFocus)
         TvAfterPlayer(firstFocus)
     }
-    val groupState = rememberLazyListState((groups.indexOfFirst { it.id == selectedGroup } - 3).coerceAtLeast(0))
-    // keep the current group in view (it can change from the player's channel list)
+    val groupState = rememberLazyListState(groups.indexOfFirst { it.id == selectedGroup }.coerceAtLeast(0))
+    // keep the current group on the line (it can change from the player's channel list)
     LaunchedEffect(selectedGroup, groups.size) {
         val i = groups.indexOfFirst { it.id == selectedGroup }
-        if (i < 0) return@LaunchedEffect
-        val visible = groupState.layoutInfo.visibleItemsInfo
-        if (visible.none { it.index == i } || visible.lastOrNull()?.index == i) groupState.scrollToItem((i - 3).coerceAtLeast(0))
+        if (i >= 0 && groupState.firstVisibleItemIndex != i) groupState.scrollToItem(i)
     }
     var pendingGroup by remember { mutableStateOf<ChannelGroup?>(null) }
-
     LaunchedEffect(pendingGroup) {
         val g = pendingGroup ?: return@LaunchedEffect
         delay(250)
         if (g.id != selectedGroup) onGroupFocus(g)
     }
-    LaunchedEffect(selectedGroup) { listState.scrollToItem((start - 3).coerceAtLeast(0)) }
-    // keep the playing channel on screen (it changes when zapping in the player), so it can get focus
+    LaunchedEffect(selectedGroup) { listState.scrollToItem(start) }
+    // the playing channel changed elsewhere (zapping in the player): bring it to the line,
+    // but never while the user is moving through the channels
     LaunchedEffect(playingKey, channels.size) {
-        if (playingKey == null || channels.isEmpty()) return@LaunchedEffect
-        val visible = listState.layoutInfo.visibleItemsInfo
-        if (visible.size < 3 || visible.none { it.index == start } || visible.first().index == start || visible.last().index == start) {
-            listState.scrollToItem((start - 3).coerceAtLeast(0))
-        }
+        if (playingKey == null || channels.isEmpty() || channelsHaveFocus) return@LaunchedEffect
+        if (listState.firstVisibleItemIndex != start) listState.scrollToItem(start)
     }
     LaunchedEffect(refocusKey, channels.isNotEmpty()) {
         // refocus the playing channel when the player closes; never while it is open (it would take the remote away from it)
@@ -229,141 +249,154 @@ fun TvLiveContent(
         }
     }
 
-    Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 20.dp, top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        // ------- groups -------
-        Column(Modifier.width(196.dp).fillMaxHeight()) {
-            Text("Live TV", Modifier.padding(start = 8.dp, bottom = 8.dp), color = c.text, style = MaterialTheme.typography.headlineSmall)
-            LazyColumn(
-                state = groupState,
-                modifier = Modifier.fillMaxSize().restoreListFocus(groupFocus),
-                contentPadding = PaddingValues(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                val gTarget = groupFocus.target(groups.map { it.id }, groupState.firstVisibleItemIndex).let { t -> if (groups.any { it.id == selectedGroup }) selectedGroup else t }
-                itemsIndexed(groups, key = { _, g -> g.id }) { _, g ->
-                    ListRow(
-                        modifier = Modifier.listItemFocus(groupFocus, g.id, g.id == gTarget),
-                        title = g.name,
-                        selected = g.id == selectedGroup,
-                        onFocus = { pendingGroup = g },
-                        onLongClick = if (g.special) null else ({ onGroupLongPress(g) }),
-                        trailing = { Text("${g.count}", color = c.textMuted, style = MaterialTheme.typography.bodySmall) },
-                    ) { onGroupFocus(g) }
-                }
-            }
-        }
-        // ------- channels -------
-        Box(Modifier.width(300.dp).fillMaxHeight().padding(top = 40.dp)) {
-            if (channels.isEmpty()) {
-                EmptyState("No channels in this group", if (loadingText.isNotBlank()) loadingText else "Choose another group on the left.")
-            } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize().restoreListFocus(channelFocus),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                ) {
-                    val cTarget = channelFocus.target(channels.map { it.key }, listState.firstVisibleItemIndex)
-                    itemsIndexed(channels, key = { _, ch -> ch.key }) { i, ch ->
-                        TvChannelRow(
-                            modifier = Modifier.listItemFocus(channelFocus, ch.key, ch.key == cTarget),
-                            ch = ch,
-                            name = displayName(ch),
-                            nn = nowNext[ch.epgKey],
-                            showNumber = settings.showChannelNumbers,
-                            favorite = ch.key in favorites,
-                            playing = ch.key == playingKey,
-                            focusRequester = if (i == start) firstFocus else null,
-                            onFocus = { onChannelFocus(ch) },
-                            onLongClick = { onChannelLongPress(ch) },
-                        ) { onChannelClick(ch) }
-                    }
-                }
-            }
-        }
-        // ------- the focused channel: preview / now, days, programmes -------
-        Column(Modifier.weight(1f).fillMaxHeight()) {
-            Row(Modifier.fillMaxWidth().height(24.dp), horizontalArrangement = Arrangement.End) {
-                if (loadingText.isNotBlank()) Text(loadingText, Modifier.weight(1f), color = c.accentAlt, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                Text(Fmt.time(System.currentTimeMillis()), color = c.text, style = MaterialTheme.typography.titleMedium)
-            }
-            Spacer(Modifier.height(8.dp))
-            Box(Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(10.dp)).background(c.surface)) {
-                if (preview != null) preview()
-                else if (focused != null) Row(Modifier.fillMaxSize().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    ChannelLogo(focused.logo, focused.name, 96.dp, 56.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(displayName(focused), color = c.text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val p = nowNext[focused.epgKey]?.now
-                        Text(p?.title ?: "Press OK to watch", color = c.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (p != null) ProgressLine(progressOf(p), Modifier.fillMaxWidth().padding(top = 6.dp), height = 3.dp)
-                    }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            if (focused != null) ChannelDays(focused, loadPrograms, onProgramClick, onProgramLongClick, Modifier.fillMaxSize())
-        }
-    }
-}
-
-/** Days (archive back … tomorrow) and the programmes of the chosen day for one channel */
-@Composable
-fun ChannelDays(
-    ch: ChannelEntity,
-    loadPrograms: suspend (ChannelEntity, Long, Long) -> List<ProgramEntity>,
-    onProgramClick: (ChannelEntity, ProgramEntity) -> Unit,
-    onProgramLongClick: (ChannelEntity, ProgramEntity) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val c = Orbit.colors
-    val now = remember(ch.key) { System.currentTimeMillis() }
+    // programmes of the focused channel for the chosen day
+    val now = remember(focused?.key) { System.currentTimeMillis() }
     val today = remember(now) { startOfDay(now) }
-    val back = if (ch.archive) ch.archiveDays.coerceIn(1, 7) else 0
-    var day by remember(ch.key) { mutableStateOf(0) } // 0 = today, -1 = yesterday, 1 = tomorrow
+    val back = if (focused?.archive == true) focused.archiveDays.coerceIn(1, 7) else 0
+    var day by remember(focused?.key) { mutableStateOf(0) } // 0 = today, -1 = yesterday …
     val dayStart = today + day * 86_400_000L
-    val programmes by produceState<List<ProgramEntity>?>(null, ch.key, day) {
+    val programmes by produceState<List<ProgramEntity>?>(null, focused?.key, day) {
         value = null
-        delay(180) // fast scrolling through channels: load only where the user stops
+        val ch = focused ?: return@produceState
+        delay(150) // fast scrolling through channels: load only where the user stops
         value = loadPrograms(ch, dayStart, dayStart + 86_400_000L).filter { it.stop > dayStart && it.start < dayStart + 86_400_000L }
     }
-    Column(modifier) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 6.dp)) {
-            items((-back..1).toList()) { d ->
-                Focusable(onClick = { day = d }, onFocus = { day = d }, shape = RoundedCornerShape(16.dp), color = if (d == day) c.accent else c.surface, scaleOnFocus = 1.05f) { f ->
-                    Text(dayName(d, today + d * 86_400_000L), Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = if (d == day && !f) c.onAccent else c.text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                }
-            }
-        }
-        val list = programmes
-        when {
-            list == null -> Unit
-            list.isEmpty() -> Text("No programme information for this day", Modifier.padding(8.dp), color = c.textMuted, style = MaterialTheme.typography.bodyMedium)
-            else -> {
-                val nowIdx = list.indexOfFirst { it.start <= now && it.stop > now }
-                val state = remember(ch.key, day) { androidx.compose.foundation.lazy.LazyListState(if (day == 0 && nowIdx > 0) (nowIdx - 2).coerceAtLeast(0) else 0) }
-                LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(4.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-                    items(list, key = { it.id * 31 + it.start }) { p ->
-                        val past = p.stop <= now
-                        val isNow = p.start <= now && p.stop > now
-                        val archived = ch.archive && p.start < now && p.start >= now - ch.archiveDays.coerceAtLeast(1) * 86_400_000L
-                        Focusable(
-                            onClick = { onProgramClick(ch, p) },
-                            onLongClick = { onProgramLongClick(ch, p) },
-                            modifier = Modifier.fillMaxWidth(),
-                            color = if (isNow) c.accent.copy(alpha = 0.14f) else c.surface,
-                            scaleOnFocus = 1.02f,
+    var focusedProg by remember { mutableStateOf<ProgramEntity?>(null) }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val band = (maxHeight - ROW) / 2
+        val pad = PaddingValues(top = band, bottom = band)
+        // the focused channel, full screen behind the lists
+        if (preview != null) Box(Modifier.fillMaxSize()) { preview() }
+        Box(Modifier.fillMaxSize().background(c.background.copy(alpha = if (preview != null) 0.80f else 1f)))
+        // the line
+        Box(Modifier.fillMaxWidth().height(ROW).offset(y = band).background(c.accent.copy(alpha = 0.10f)))
+        Box(Modifier.fillMaxWidth().height(2.dp).offset(y = band + ROW).background(c.accent))
+
+        CompositionLocalProvider(LocalBringIntoViewSpec provides CenterPivot) {
+            Row(Modifier.fillMaxSize().padding(start = 8.dp, end = 12.dp)) {
+                // ------- groups -------
+                LazyColumn(
+                    state = groupState,
+                    modifier = Modifier.width(200.dp).fillMaxHeight().restoreListFocus(groupFocus),
+                    contentPadding = pad,
+                ) {
+                    itemsIndexed(groups, key = { _, g -> g.id }) { _, g ->
+                        BandRow(
+                            modifier = Modifier.listItemFocus(groupFocus, g.id, g.id == selectedGroup || (groups.none { it.id == selectedGroup } && g == groups.first())),
+                            selected = g.id == selectedGroup,
+                            onFocus = { pendingGroup = g },
+                            onLongClick = if (g.special) null else ({ onGroupLongPress(g) }),
+                            onClick = { onGroupFocus(g) },
                         ) { f ->
-                            Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(Fmt.time(p.start), Modifier.width(48.dp), color = if (isNow) c.accent else c.textMuted, style = MaterialTheme.typography.bodyMedium, fontWeight = if (isNow) FontWeight.Bold else FontWeight.Normal)
-                                Column(Modifier.weight(1f)) {
-                                    Text(p.title, color = if (past && !archived) c.textMuted else c.text, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (f) FontWeight.SemiBold else FontWeight.Normal)
-                                    if (isNow) ProgressLine(progressOf(p, now), Modifier.fillMaxWidth().padding(top = 4.dp), height = 3.dp)
-                                    if (f && archived && !isNow) Text("OK = watch from the archive", color = c.accentAlt, style = MaterialTheme.typography.labelSmall)
-                                    if (f && isNow && ch.archive) Text("OK = live · hold OK = from the start", color = c.accentAlt, style = MaterialTheme.typography.labelSmall)
+                            Text(g.name, Modifier.weight(1f), color = rowColor(f, g.id == selectedGroup), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (f || g.id == selectedGroup) FontWeight.SemiBold else FontWeight.Normal)
+                            Text("${g.count}", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                Divider()
+                // ------- channels -------
+                Box(Modifier.width(270.dp).fillMaxHeight()) {
+                    if (channels.isEmpty()) {
+                        Box(Modifier.fillMaxSize().padding(top = band - 40.dp)) {
+                            EmptyState("No channels in this group", if (loadingText.isNotBlank()) loadingText else "Choose another group on the left.")
+                        }
+                    } else {
+                        val cTarget = channelFocus.focusedKey?.takeIf { k -> channels.any { it.key == k } } ?: channels[start].key
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize().onFocusChanged { channelsHaveFocus = it.hasFocus }.restoreListFocus(channelFocus),
+                            contentPadding = pad,
+                        ) {
+                            itemsIndexed(channels, key = { _, ch -> ch.key }) { i, ch ->
+                                val sel = ch.key == focused?.key
+                                BandRow(
+                                    modifier = Modifier.listItemFocus(channelFocus, ch.key, ch.key == cTarget)
+                                        .then(if (i == start) Modifier.focusRequester(firstFocus) else Modifier),
+                                    selected = sel,
+                                    onFocus = { onChannelFocus(ch) },
+                                    onLongClick = { onChannelLongPress(ch) },
+                                    onClick = { onChannelClick(ch) },
+                                ) { f ->
+                                    if (settings.showChannelNumbers) Text("${ch.num}", Modifier.width(40.dp), color = if (ch.key == playingKey) c.accent else c.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                                    ChannelLogo(ch.logo, ch.name, 52.dp, 30.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(displayName(ch), Modifier.weight(1f, fill = false), color = rowColor(f, sel), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (f || sel) FontWeight.SemiBold else FontWeight.Normal)
+                                    if (ch.key == playingKey) Icon(Icons.Filled.PlayArrow, null, Modifier.padding(start = 4.dp).size(16.dp), tint = c.accent)
+                                    if (ch.key in favorites) Icon(Icons.Filled.Star, null, Modifier.padding(start = 4.dp).size(14.dp), tint = c.accentAlt)
+                                    if (ch.archive) Icon(Icons.Filled.History, "Archive", Modifier.padding(start = 4.dp).size(14.dp), tint = c.accentAlt)
                                 }
-                                when {
-                                    isNow -> Text("LIVE", Modifier.background(c.live, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                    archived -> Icon(Icons.Filled.History, "From the archive", Modifier.size(18.dp), tint = c.accentAlt)
+                            }
+                        }
+                    }
+                }
+                Divider()
+                // ------- days -------
+                if (focused != null) {
+                    val days = (-back..2).toList()
+                    val dayState = remember(focused.key) { LazyListState(days.indexOf(0).coerceAtLeast(0)) }
+                    LazyColumn(
+                        state = dayState,
+                        modifier = Modifier.width(112.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.05f)).restoreListFocus(dayFocus),
+                        contentPadding = pad,
+                    ) {
+                        items(days, key = { it }) { d ->
+                            BandRow(
+                                modifier = Modifier.listItemFocus(dayFocus, d, d == day),
+                                selected = d == day,
+                                onFocus = { day = d },
+                                onClick = { day = d },
+                                horizontal = 10.dp,
+                            ) { f ->
+                                Column {
+                                    if (d in -1..1) Text(dayLabel(d), color = if (f || d == day) c.accent else c.textMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                    Text(dayDate(today + d * 86_400_000L), color = rowColor(f, d == day), style = MaterialTheme.typography.bodyMedium, fontWeight = if (f || d == day) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                    Divider()
+                }
+                // ------- programmes -------
+                Box(Modifier.weight(1f).fillMaxHeight()) {
+                    val list = programmes
+                    when {
+                        focused == null -> Unit
+                        list == null -> Unit
+                        list.isEmpty() -> Text("No programme information for this day", Modifier.padding(start = 16.dp, top = band + 12.dp), color = c.textMuted, style = MaterialTheme.typography.bodyLarge)
+                        else -> key(focused.key, day) {
+                            val nowIdx = list.indexOfFirst { it.start <= now && it.stop > now }.let { if (it < 0) list.indexOfFirst { p -> p.start > now } else it }
+                            val first = if (day == 0 && nowIdx >= 0) nowIdx else if (day > 0) 0 else (list.size - 1).coerceAtLeast(0)
+                            val pTarget = progFocus.focusedKey?.takeIf { k -> list.any { progKey(it) == k } } ?: progKey(list[first])
+                            val st = rememberLazyListState(first)
+                            LazyColumn(state = st, modifier = Modifier.fillMaxSize().restoreListFocus(progFocus), contentPadding = pad) {
+                                items(list, key = { progKey(it) }) { p ->
+                                    val past = p.stop <= now
+                                    val isNow = p.start <= now && p.stop > now
+                                    val archived = focused.archive && p.start < now && p.start >= now - back * 86_400_000L
+                                    BandRow(
+                                        modifier = Modifier.listItemFocus(progFocus, progKey(p), progKey(p) == pTarget),
+                                        selected = isNow,
+                                        onFocus = { focusedProg = p },
+                                        onClick = { onProgramClick(focused, p) },
+                                        onLongClick = { onProgramLongClick(focused, p) },
+                                        horizontal = 14.dp,
+                                    ) { f ->
+                                        Box(Modifier.width(22.dp)) {
+                                            when {
+                                                isNow -> Icon(Icons.Filled.PlayArrow, "On now", Modifier.size(18.dp), tint = c.accent)
+                                                archived -> Icon(Icons.Filled.History, "From the archive", Modifier.size(16.dp), tint = c.accentAlt)
+                                            }
+                                        }
+                                        Text(Fmt.time(p.start), Modifier.width(54.dp), color = if (isNow) c.accent else if (f) Color.White else c.textMuted, style = MaterialTheme.typography.bodyLarge, fontWeight = if (isNow || f) FontWeight.SemiBold else FontWeight.Normal)
+                                        Text(
+                                            p.title, Modifier.weight(1f),
+                                            color = when { f -> Color.White; isNow -> c.accent; past && !archived -> c.textMuted.copy(alpha = 0.7f); !past -> c.textMuted; else -> c.text },
+                                            style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            fontWeight = if (isNow || f) FontWeight.SemiBold else FontWeight.Normal,
+                                        )
+                                        if (isNow) ProgressLine(progressOf(p, now), Modifier.width(70.dp).padding(start = 10.dp), height = 3.dp)
+                                    }
                                 }
                             }
                         }
@@ -371,6 +404,61 @@ fun ChannelDays(
                 }
             }
         }
+
+        // top right: which channel, the time and what OK does on the focused programme
+        Column(Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 24.dp), horizontalAlignment = Alignment.End) {
+            Text(Fmt.time(System.currentTimeMillis()), color = c.text, style = MaterialTheme.typography.titleLarge)
+            if (focused != null) Text(displayName(focused), color = c.accent, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+            if (loadingText.isNotBlank()) Text(loadingText, color = c.accentAlt, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+        }
+        val fp = focusedProg
+        if (fp != null && focused != null && fp.epgKey == focused.epgKey) {
+            val hint = when {
+                fp.start <= now && fp.stop > now -> if (focused.archive) "OK  watch live   ·   hold OK  from the start" else "OK  watch live"
+                fp.stop <= now && focused.archive && fp.start >= now - back * 86_400_000L -> "OK  watch from the archive"
+                fp.stop <= now -> "No longer in the archive"
+                else -> "Starts ${Fmt.date(fp.start)} at ${Fmt.time(fp.start)}"
+            }
+            Text(hint, Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 14.dp), color = c.textMuted, style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+private fun progKey(p: ProgramEntity): Long = p.id * 31 + p.start
+
+@Composable
+private fun rowColor(focused: Boolean, selected: Boolean): Color =
+    if (focused) Color.White else if (selected) Orbit.colors.accent else Orbit.colors.text
+
+@Composable
+private fun Divider() {
+    Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.08f)))
+}
+
+/** One row of a column: same height everywhere, focus = blue on the line */
+@Composable
+private fun BandRow(
+    modifier: Modifier,
+    selected: Boolean,
+    onFocus: () -> Unit,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    horizontal: Dp = 12.dp,
+    content: @Composable RowScope.(focused: Boolean) -> Unit,
+) {
+    val c = Orbit.colors
+    Focusable(
+        onClick = onClick,
+        onLongClick = onLongClick,
+        onFocus = onFocus,
+        modifier = modifier.fillMaxWidth().height(ROW),
+        shape = RoundedCornerShape(6.dp),
+        color = Color.Transparent,
+        focusedColor = c.accent.copy(alpha = 0.55f),
+        scaleOnFocus = 1f,
+        border = false,
+    ) { f ->
+        Row(Modifier.fillMaxSize().padding(horizontal = horizontal), verticalAlignment = Alignment.CenterVertically) { content(f) }
     }
 }
 
@@ -379,12 +467,14 @@ private fun startOfDay(ms: Long): Long = java.util.Calendar.getInstance().apply 
     set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
 }.timeInMillis
 
-private fun dayName(d: Int, dayStart: Long): String = when (d) {
+private fun dayLabel(d: Int): String = when (d) {
     0 -> "Today"
     -1 -> "Yesterday"
     1 -> "Tomorrow"
-    else -> java.text.SimpleDateFormat("EEE d", java.util.Locale.ENGLISH).format(java.util.Date(dayStart))
+    else -> ""
 }
+
+private fun dayDate(dayStart: Long): String = java.text.SimpleDateFormat("EEE dd.MM.", java.util.Locale.ENGLISH).format(java.util.Date(dayStart))
 
 fun progressOf(p: ProgramEntity, now: Long = System.currentTimeMillis()): Float =
     ((now - p.start).toFloat() / (p.stop - p.start).coerceAtLeast(1)).coerceIn(0f, 1f)

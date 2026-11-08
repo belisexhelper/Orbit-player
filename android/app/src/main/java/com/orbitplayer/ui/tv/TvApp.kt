@@ -128,7 +128,7 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
     /** From the menu into the screen: back to the last focused element, else the screen's entry point */
     fun enterContent() {
         val target = entry.requester
-        if (entry.visited != route && target != null && runCatching { target.requestFocus() }.isSuccess) return
+        if (target != null && runCatching { target.requestFocus() }.isSuccess) return
         runCatching { contentFocus.requestFocus() }
     }
 
@@ -164,7 +164,6 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                     .focusRequester(contentFocus)
                     .onFocusChanged { if (it.hasFocus) entry.visited = route }
                     .focusProperties { exit = { d -> com.orbitplayer.ui.components.arrowExit(d, left = railFocus) } }
-                    .focusRestorer()
                     .focusGroup(),
             ) {
               CompositionLocalProvider(LocalContentEntry provides entry) {

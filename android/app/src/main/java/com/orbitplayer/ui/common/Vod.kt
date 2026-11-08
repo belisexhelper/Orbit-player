@@ -1,5 +1,10 @@
 package com.orbitplayer.ui.common
 
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import com.orbitplayer.ui.components.listItemFocus
+import com.orbitplayer.ui.components.restoreListFocus
+import com.orbitplayer.ui.components.rememberListFocus
 import com.orbitplayer.ui.components.IconAction
 import com.orbitplayer.ui.components.OrbitTextField
 import com.orbitplayer.ui.components.ChoiceDialog
@@ -109,6 +114,10 @@ fun VodBrowseScreen(vm: AppViewModel, series: Boolean) {
     }
     val searching = debounced.isNotEmpty()
     var sortDialog by remember { mutableStateOf(false) }
+    val gridFocus = rememberListFocus()
+    val catFocus = rememberListFocus()
+    val gridState = remember(series, cat, debounced, sort) { LazyGridState() }
+    val catState = rememberLazyListState()
     val searchFocus = remember { FocusRequester() }
     val queryCat = if (cat == CAT_FAV || cat == CAT_CONTINUE) CAT_ALL else cat
     val movies by remember(queryCat, series, debounced) { vm.movies(queryCat, debounced) }.collectAsState(null)
@@ -196,14 +205,16 @@ fun VodBrowseScreen(vm: AppViewModel, series: Boolean) {
                 m,
             )
             else -> LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Adaptive(if (tv) 148.dp else 108.dp),
-                modifier = m.focusRestorer().focusGroup(),
+                modifier = m.restoreListFocus(gridFocus),
                 contentPadding = PaddingValues(if (tv) 10.dp else 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(if (tv) 18.dp else 10.dp),
                 verticalArrangement = Arrangement.spacedBy(if (tv) 16.dp else 10.dp),
             ) {
+                val target = gridFocus.target(cards.map { it.key }, gridState.firstVisibleItemIndex)
                 items(cards, key = { it.key }) { card ->
-                    PosterCard(card.title, card.image, subtitle = card.sub, progress = card.progress, onLongClick = { vm.toggleFavorite(card.key, if (series) "series" else "vod") }) { card.open() }
+                    PosterCard(card.title, card.image, Modifier.listItemFocus(gridFocus, card.key, card.key == target), subtitle = card.sub, progress = card.progress, onLongClick = { vm.toggleFavorite(card.key, if (series) "series" else "vod") }) { card.open() }
                 }
             }
         }
@@ -213,9 +224,10 @@ fun VodBrowseScreen(vm: AppViewModel, series: Boolean) {
         Row(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 18.dp)) {
             Column(Modifier.width(240.dp).fillMaxHeight()) {
                 Text(title, Modifier.padding(start = 14.dp, bottom = 10.dp), color = c.text, style = MaterialTheme.typography.headlineSmall)
-                LazyColumn(Modifier.focusRestorer().focusGroup(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                LazyColumn(state = catState, modifier = Modifier.restoreListFocus(catFocus), contentPadding = PaddingValues(bottom = 24.dp)) {
+                    val target = catFocus.target(catList.map { it.first }, catState.firstVisibleItemIndex)
                     items(catList, key = { it.first }) { (id, name) ->
-                        ListRow(name, selected = id == cat, onFocus = { cat = id }) { cat = id }
+                        ListRow(name, Modifier.listItemFocus(catFocus, id, id == target), selected = id == cat, onFocus = { cat = id }) { cat = id }
                     }
                 }
             }
@@ -374,7 +386,7 @@ fun SeriesDetailScreen(vm: AppViewModel, key: String) {
     val cur = if (season in seasonNums) season else lastEp?.first ?: seasonNums.firstOrNull() ?: 1
     val episodes = d?.seasons?.get(cur).orEmpty()
 
-    LazyColumn(Modifier.fillMaxSize().focusRestorer().focusGroup(), contentPadding = PaddingValues(bottom = 32.dp)) {
+    LazyColumn(Modifier.fillMaxSize().focusGroup(), contentPadding = PaddingValues(bottom = 32.dp)) {
         item {
             DetailHeader(
                 title = show.name,

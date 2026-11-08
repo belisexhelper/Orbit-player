@@ -217,7 +217,6 @@ fun EpgGrid(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .focusRestorer()
                         .focusGroup()
                         .then(
                             if (!tv) Modifier.pointerInput(dpPerMin) {

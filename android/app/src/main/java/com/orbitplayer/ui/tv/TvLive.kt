@@ -1,5 +1,8 @@
 package com.orbitplayer.ui.tv
 
+import com.orbitplayer.ui.components.listItemFocus
+import com.orbitplayer.ui.components.restoreListFocus
+import com.orbitplayer.ui.components.rememberListFocus
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -163,7 +166,9 @@ fun TvLiveContent(
     val start = channels.indexOfFirst { it.key == playingKey }.coerceAtLeast(0)
     val listState = rememberLazyListState((start - 3).coerceAtLeast(0))
     val firstFocus = remember { FocusRequester() }
-    if (channels.isNotEmpty()) TvEntryPoint(firstFocus)
+    val groupFocus = rememberListFocus()
+    val channelFocus = rememberListFocus()
+    if (channels.isNotEmpty()) TvEntryPoint(channelFocus.requester)
     val groupState = rememberLazyListState((groups.indexOfFirst { it.id == selectedGroup } - 3).coerceAtLeast(0))
     var pendingGroup by remember { mutableStateOf<ChannelGroup?>(null) }
 
@@ -224,12 +229,14 @@ fun TvLiveContent(
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             LazyColumn(
                 state = groupState,
-                modifier = Modifier.width(236.dp).fillMaxHeight().focusRestorer().focusGroup(),
+                modifier = Modifier.width(236.dp).fillMaxHeight().restoreListFocus(groupFocus),
                 contentPadding = PaddingValues(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
+                val gTarget = groupFocus.target(groups.map { it.id }, groupState.firstVisibleItemIndex).let { t -> if (groups.any { it.id == selectedGroup }) selectedGroup else t }
                 itemsIndexed(groups, key = { _, g -> g.id }) { _, g ->
                     ListRow(
+                        modifier = Modifier.listItemFocus(groupFocus, g.id, g.id == gTarget),
                         title = g.name,
                         selected = g.id == selectedGroup,
                         onFocus = { pendingGroup = g },
@@ -243,11 +250,13 @@ fun TvLiveContent(
             } else {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.weight(1f).fillMaxHeight().focusRestorer().focusGroup(),
+                    modifier = Modifier.weight(1f).fillMaxHeight().restoreListFocus(channelFocus),
                     contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
+                    val cTarget = channelFocus.target(channels.map { it.key }, listState.firstVisibleItemIndex)
                     itemsIndexed(channels, key = { _, ch -> ch.key }) { i, ch ->
                         TvChannelRow(
+                            modifier = Modifier.listItemFocus(channelFocus, ch.key, ch.key == cTarget),
                             ch = ch,
                             name = displayName(ch),
                             nn = nowNext[ch.epgKey],
@@ -280,6 +289,7 @@ fun TvChannelRow(
     focusRequester: FocusRequester?,
     onFocus: () -> Unit,
     onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val c = Orbit.colors
@@ -287,7 +297,7 @@ fun TvChannelRow(
         onClick = onClick,
         onLongClick = onLongClick,
         onFocus = onFocus,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        modifier = modifier.fillMaxWidth().padding(vertical = 2.dp),
         color = if (playing) c.accent.copy(alpha = 0.10f) else Color.Transparent,
         scaleOnFocus = 1.0f,
         focusRequester = focusRequester,

@@ -145,6 +145,14 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
     val context = LocalContext.current
 
     var aspect by remember { mutableStateOf(settings.aspect) }
+    // short note in the middle of the screen after a quick seek ("+10 s")
+    var seekNote by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(seekNote) {
+        if (seekNote != null) {
+            delay(900)
+            seekNote = null
+        }
+    }
     val engine by pb.engine.collectAsState()
     var overlay by remember { mutableStateOf(Overlay.None) }
     var picker by remember { mutableStateOf(Picker.None) }
@@ -256,7 +264,13 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
                         onBanner = { banner = !banner; touch() },
                         onDigit = { d -> digits = (digits + d).take(4); touch() },
                         onControls = { controls = true; touch() },
-                        onSeek = { ms -> pb.seekBy(ms); controls = true; touch() },
+                        onSeek = { ms ->
+                            val step = if (cur?.isCatchup == true) 60_000L else 10_000L
+                            pb.seekBy(if (ms < 0) -step else step)
+                            seekNote = (if (ms < 0) "−" else "+") + if (cur?.isCatchup == true) "1 min" else "10 s"
+                            controls = true
+                            touch()
+                        },
                         onTogglePause = { pb.togglePause(); controls = true; touch() },
                         onCommitDigits = { if (digits.isNotEmpty()) { commitNumber(vm, digits); digits = "" } },
                         hasDigits = digits.isNotEmpty(),
@@ -288,6 +302,13 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
         )
 
         if (buffering && error == null) CircularProgressIndicator(Modifier.align(Alignment.Center).size(56.dp), color = Orbit.colors.accent)
+        seekNote?.let { note ->
+            Text(
+                note,
+                Modifier.align(Alignment.TopCenter).padding(top = 48.dp).background(Color(0xCC101521), RoundedCornerShape(12.dp)).padding(horizontal = 22.dp, vertical = 10.dp),
+                color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+            )
+        }
 
         error?.let { msg ->
             Column(
@@ -730,6 +751,17 @@ private fun BoxScope.TvVodControls(vm: AppViewModel, item: PlayItem, now: Long, 
     val pos = now.let { pb.positionMs }
     val dur = now.let { pb.durationMs }
     val playFocus = remember { FocusRequester() }
+    // Timeline: Left/Right move a marker by 1 min (5 min while held); playback jumps there when you stop
+    var scrub by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(scrub) {
+        val t = scrub ?: return@LaunchedEffect
+        delay(800)
+        pb.seekTo(t)
+        delay(400)
+        scrub = null
+    }
+    val small = if (item.isCatchup) 60_000L else 10_000L
+    val smallLabel = if (item.isCatchup) "1 min" else "10 s"
     LaunchedEffect(Unit) {
         delay(60)
         runCatching { playFocus.requestFocus() }
@@ -752,9 +784,10 @@ private fun BoxScope.TvVodControls(vm: AppViewModel, item: PlayItem, now: Long, 
             onClick = { pb.togglePause() },
             modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val step = if (e.nativeKeyEvent.repeatCount > 6) 300_000L else 60_000L
                 when (e.key) {
-                    Key.DirectionLeft -> { pb.seekBy(-10_000); true }
-                    Key.DirectionRight -> { pb.seekBy(10_000); true }
+                    Key.DirectionLeft -> { scrub = ((scrub ?: pos) - step).coerceAtLeast(0); true }
+                    Key.DirectionRight -> { scrub = ((scrub ?: pos) + step).let { if (dur > 0) it.coerceAtMost(dur - 5_000) else it }; true }
                     else -> false
                 }
             },
@@ -763,21 +796,26 @@ private fun BoxScope.TvVodControls(vm: AppViewModel, item: PlayItem, now: Long, 
             scaleOnFocus = 1f,
         ) { focused ->
             Column(Modifier.padding(vertical = 8.dp, horizontal = 4.dp)) {
-                ProgressLine(if (dur > 0) pos.toFloat() / dur else 0f, Modifier.fillMaxWidth(), height = if (focused) 8.dp else 5.dp)
+                val shown = scrub ?: pos
+                Box {
+                    ProgressLine(if (dur > 0) pos.toFloat() / dur else 0f, Modifier.fillMaxWidth(), height = if (focused) 8.dp else 5.dp)
+                    // where playback will jump to
+                    if (scrub != null && dur > 0) ProgressLine(shown.toFloat() / dur, Modifier.fillMaxWidth(), color = c.accentAlt.copy(alpha = 0.85f), height = if (focused) 8.dp else 5.dp)
+                }
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                    Text(Fmt.duration(pos), color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                    Text(Fmt.duration(shown), color = if (scrub != null) c.accentAlt else Color.White, style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.weight(1f))
-                    if (focused) Text("◀ ▶  seek 10 s", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
+                    if (focused) Text(if (scrub != null) "Jumping to ${Fmt.duration(shown)}…" else "◀ ▶  1 min · hold for 5 min", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.weight(1f))
-                    Text(if (dur > 0) "−" + Fmt.duration(dur - pos) else "", color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                    Text(if (dur > 0) "−" + Fmt.duration(dur - shown) else "", color = Color.White, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconAction(Icons.Filled.Replay10, "−10 s") { pb.seekBy(-10_000) }
+            IconAction(Icons.Filled.Replay10, "−$smallLabel") { pb.seekBy(-small) }
             IconAction(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (playing) "Pause" else "Play", focusRequester = playFocus) { pb.togglePause() }
-            IconAction(Icons.Filled.Forward10, "+10 s") { pb.seekBy(10_000) }
+            IconAction(Icons.Filled.Forward10, "+$smallLabel") { pb.seekBy(small) }
             if (item.kind == "episode" && index < queue.size - 1) IconAction(Icons.Filled.SkipNext, "Next episode") { pb.start(index + 1) }
             if (item.isCatchup) item.channel?.let { ch -> IconAction(Icons.Filled.LiveTv, "Back to live") { vm.playChannel(ch, listOf(ch)) } }
             Spacer(Modifier.width(24.dp))

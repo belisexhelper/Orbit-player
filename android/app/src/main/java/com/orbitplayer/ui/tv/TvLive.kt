@@ -101,6 +101,9 @@ fun TvLiveScreen(vm: AppViewModel) {
     val playerOpen by vm.playerOpen.collectAsState()
     val sync by vm.syncStatus.collectAsState()
     var focused by remember { mutableStateOf<ChannelEntity?>(null) }
+    // the channel watched last: the list keeps it on the line even when leaving the player stopped it (no preview)
+    var lastKey by remember { mutableStateOf(playing?.channel?.key ?: vm.store.lastChannelKey.ifBlank { null }) }
+    LaunchedEffect(playing?.channel?.key) { playing?.channel?.key?.let { lastKey = it } }
     var menuFor by remember { mutableStateOf<ChannelEntity?>(null) }
     var groupMenu by remember { mutableStateOf<ChannelGroup?>(null) }
 
@@ -120,7 +123,8 @@ fun TvLiveScreen(vm: AppViewModel) {
         favorites = favorites,
         settings = settings,
         playingKey = playing?.channel?.key,
-        focused = focused ?: channels.firstOrNull { it.key == playing?.channel?.key } ?: channels.firstOrNull(),
+        anchorKey = playing?.channel?.key ?: lastKey,
+        focused = focused?.takeIf { f -> channels.any { it.key == f.key } } ?: channels.firstOrNull { it.key == (playing?.channel?.key ?: lastKey) } ?: channels.firstOrNull(),
         loadingText = sync.values.firstOrNull { it.running }?.step ?: "",
         refocusKey = playerOpen,
         displayName = vm::displayName,
@@ -206,9 +210,11 @@ fun TvLiveContent(
     loadPrograms: suspend (ChannelEntity, Long, Long) -> List<ProgramEntity> = { _, _, _ -> emptyList() },
     onProgramClick: (ChannelEntity, ProgramEntity) -> Unit = { _, _ -> },
     onProgramLongClick: (ChannelEntity, ProgramEntity) -> Unit = { _, _ -> },
+    /** channel kept on the line: the playing one, else the one watched last */
+    anchorKey: String? = playingKey,
 ) {
     val c = Orbit.colors
-    val start = channels.indexOfFirst { it.key == playingKey }.coerceAtLeast(0)
+    val start = channels.indexOfFirst { it.key == anchorKey }.coerceAtLeast(0)
     val listState = rememberLazyListState(start)
     val firstFocus = remember { FocusRequester() }
     val groupFocus = rememberListFocus()
@@ -236,9 +242,17 @@ fun TvLiveContent(
     LaunchedEffect(selectedGroup) { listState.scrollToItem(start) }
     // the playing channel changed elsewhere (zapping in the player): bring it to the line,
     // but never while the user is moving through the channels
-    LaunchedEffect(playingKey, channels.size) {
-        if (playingKey == null || channels.isEmpty() || channelsHaveFocus) return@LaunchedEffect
+    LaunchedEffect(anchorKey, channels.size) {
+        if (anchorKey == null || channels.isEmpty() || channelsHaveFocus) return@LaunchedEffect
         if (listState.firstVisibleItemIndex != start) listState.scrollToItem(start)
+    }
+    // whatever channel has focus sits on the line (also when focus was set by the app, not by the arrows)
+    var focusedIndex by remember { mutableStateOf(-1) }
+    var focusTick by remember { mutableStateOf(0) }
+    LaunchedEffect(focusedIndex, focusTick) {
+        if (focusedIndex < 0) return@LaunchedEffect
+        delay(200)
+        if (channelsHaveFocus && focusedIndex < channels.size && listState.firstVisibleItemIndex != focusedIndex) listState.animateScrollToItem(focusedIndex)
     }
     LaunchedEffect(refocusKey, channels.isNotEmpty()) {
         // refocus the playing channel when the player closes; never while it is open (it would take the remote away from it)
@@ -314,7 +328,7 @@ fun TvLiveContent(
                                     modifier = Modifier.listItemFocus(channelFocus, ch.key, ch.key == cTarget)
                                         .then(if (i == start) Modifier.focusRequester(firstFocus) else Modifier),
                                     selected = sel,
-                                    onFocus = { onChannelFocus(ch) },
+                                    onFocus = { focusedIndex = i; focusTick++; onChannelFocus(ch) },
                                     onLongClick = { onChannelLongPress(ch) },
                                     onClick = { onChannelClick(ch) },
                                 ) { f ->

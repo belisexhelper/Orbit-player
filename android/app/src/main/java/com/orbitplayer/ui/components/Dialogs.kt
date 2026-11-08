@@ -86,7 +86,7 @@ fun ChoiceDialog(title: String, options: List<Pair<String, String>>, selected: S
     }
     LaunchedEffect(Unit) {
         delay(80)
-        runCatching { (if (focusConfirm) second else first).requestFocus() }
+        runCatching { first.requestFocus() }
     }
 }
 
@@ -132,7 +132,7 @@ fun ConfirmDialog(title: String, text: String, confirm: String, onDismiss: () ->
     }
     LaunchedEffect(Unit) {
         delay(80)
-        runCatching { first.requestFocus() }
+        runCatching { (if (focusConfirm) second else first).requestFocus() }
     }
 }
 

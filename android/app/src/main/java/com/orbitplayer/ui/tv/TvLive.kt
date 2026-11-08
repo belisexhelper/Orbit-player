@@ -4,6 +4,7 @@ import com.orbitplayer.ui.components.listItemFocus
 import com.orbitplayer.ui.components.restoreListFocus
 import com.orbitplayer.ui.components.rememberListFocus
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -400,16 +401,24 @@ fun TvLiveContent(
                             }
                         }
                     }
+                    // header of the column: which channel and the time; the programmes scroll underneath it
+                    Box(
+                        Modifier.fillMaxWidth().height(76.dp)
+                            .background(Brush.verticalGradient(0f to c.background, 0.75f to c.background.copy(alpha = 0.92f), 1f to Color.Transparent)),
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                if (focused != null) Text(displayName(focused), color = c.accent, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (loadingText.isNotBlank()) Text(loadingText, color = c.accentAlt, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Spacer(Modifier.width(16.dp))
+                            Text(Fmt.time(System.currentTimeMillis()), color = c.text, style = MaterialTheme.typography.titleLarge)
+                        }
+                    }
                 }
             }
         }
 
-        // top right: which channel, the time and what OK does on the focused programme
-        Column(Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 24.dp), horizontalAlignment = Alignment.End) {
-            Text(Fmt.time(System.currentTimeMillis()), color = c.text, style = MaterialTheme.typography.titleLarge)
-            if (focused != null) Text(displayName(focused), color = c.accent, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
-            if (loadingText.isNotBlank()) Text(loadingText, color = c.accentAlt, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-        }
         val fp = focusedProg
         if (fp != null && focused != null && fp.epgKey == focused.epgKey) {
             val hint = when {

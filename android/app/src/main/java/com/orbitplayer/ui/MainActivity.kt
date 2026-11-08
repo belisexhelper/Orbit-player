@@ -28,7 +28,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import com.orbitplayer.App
 import com.orbitplayer.core.DeviceInfo
+import com.orbitplayer.takeLastCrash
 import com.orbitplayer.ui.common.PlayerScreen
 import com.orbitplayer.ui.mobile.MobileApp
 import com.orbitplayer.ui.theme.Orbit
@@ -60,7 +62,7 @@ class MainActivity : ComponentActivity() {
                 if (!isTv) setFullscreen(open)
             }
         }
-        val lastCrash = (application as com.orbitplayer.App).takeLastCrash()
+        val lastCrash = (application as App).takeLastCrash()
         setContent {
             var crashText by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(lastCrash) }
             val settings by vm.settings.collectAsState()

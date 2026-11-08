@@ -121,14 +121,15 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
     val contentFocus = remember { FocusRequester() }
     val entry = remember { ContentEntry() }
 
+    val route = vm.route.let { if (it == Route.Home) Route.Live else it }
+    val section = vm.backStack.getOrNull(1)?.let { if (it == Route.Home) Route.Live else it } ?: Route.Live
+
     /** From the menu into the screen: back to the last focused element, else the screen's entry point */
     fun enterContent() {
         val target = entry.requester
         if (entry.visited != route && target != null && runCatching { target.requestFocus() }.isSuccess) return
         runCatching { contentFocus.requestFocus() }
     }
-    val route = vm.route.let { if (it == Route.Home) Route.Live else it }
-    val section = vm.backStack.getOrNull(1)?.let { if (it == Route.Home) Route.Live else it } ?: Route.Live
 
     BackHandler(enabled = !playerOpen) {
         when {

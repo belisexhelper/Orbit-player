@@ -110,6 +110,13 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     private var triedHls = false
     private var extraSubs = mutableListOf<SubtitleSource>()
     private var progressJob: Job? = null
+
+    // live reconnect: attempts since the stream last played, and the watchdog for frozen streams
+    private var reconnects = 0
+    private var reconnectJob: Job? = null
+    private var watchdogJob: Job? = null
+    /** false while the user (or the app going to the background) has paused */
+    private var wantPlay = true
     private var recentJob: Job? = null
     private var sleepJob: Job? = null
     private var previousChannelIndex = -1
@@ -138,6 +145,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
             override fun onReady() {
                 if (!usingVlc) return
                 retries = 0
+                reconnects = 0
                 _error.value = null
             }
             override fun onEnded() { if (usingVlc) onVlcEnded() }
@@ -197,6 +205,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
                 _buffering.value = state == Player.STATE_BUFFERING
                 if (state == Player.STATE_READY) {
                     retries = 0
+                    reconnects = 0
                     _error.value = null
                 }
                 if (state == Player.STATE_ENDED) onEnded()
@@ -240,6 +249,9 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         _index.value = index
         _item.value = next
         retries = 0
+        reconnects = 0
+        reconnectJob?.cancel()
+        wantPlay = true
         triedHls = false
         manualEngine = null
         extraSubs = next.subtitles.toMutableList()
@@ -267,6 +279,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
                 saveProgress()
             }
         }
+        startWatchdog(next)
     }
 
     private fun rememberChannel(ch: ChannelEntity) {
@@ -358,8 +371,56 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         if (it.isLive || it.kind == "catchup" && vlc.durationMs <= 0) onVlcError() else onEnded()
     }
 
+    /**
+     * Live stream dropped: get a fresh address for the channel and start it again — the same thing
+     * that happens when the user switches channels — with short, growing pauses between attempts.
+     */
+    private fun reconnectLive() {
+        val it = _item.value ?: return
+        if (!settings.autoReconnect) {
+            _error.value = "Connection lost. Press OK on Try again or switch channels."
+            return
+        }
+        if (reconnectJob?.isActive == true) return
+        reconnects++
+        _error.value = "Connection lost. Reconnecting… ($reconnects)"
+        reconnectJob = scope.launch {
+            delay((1000L * reconnects).coerceAtMost(8_000L))
+            if (_item.value !== it) return@launch
+            val url = if (it.channel != null) repo.channelUrl(it.channel) else lastUrl
+            retries = 0
+            triedHls = false
+            prepare(url.ifBlank { lastUrl }, 0)
+        }
+    }
+
+    /** Live: if the picture stops moving for 15 s while it should play, reconnect */
+    private fun startWatchdog(item: PlayItem) {
+        watchdogJob?.cancel()
+        if (!item.isLive) return
+        watchdogJob = scope.launch {
+            var lastPos = -1L
+            var lastMove = System.currentTimeMillis()
+            while (_item.value === item) {
+                delay(2_000)
+                val pos = enginePositionMs
+                val now = System.currentTimeMillis()
+                val wants = wantPlay && (if (usingVlc) vlc.hasMedia else built?.playWhenReady == true)
+                if (pos != lastPos || !wants) {
+                    lastPos = pos
+                    lastMove = now
+                } else if (now - lastMove > 15_000 && reconnectJob?.isActive != true) {
+                    AppLog.w("Live stream frozen, reconnecting ${item.title}")
+                    lastMove = now
+                    reconnectLive()
+                }
+            }
+        }
+    }
+
     private fun onVlcError() {
         val it = _item.value ?: return
+        if (it.isLive) return reconnectLive()
         val maxRetries = if (it.isLive) 1000 else 4
         if (settings.autoReconnect && retries < maxRetries) {
             retries++
@@ -399,7 +460,8 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         // anything that is not a network problem (container, codec, audio output): try VLC
         val networkProblem = error.errorCode in 2000..2999
         if (!networkProblem && fallbackToVlc()) return
-        val maxRetries = if (it.isLive) 1000 else 4
+        if (it.isLive) return reconnectLive()
+        val maxRetries = 4
         if (settings.autoReconnect && retries < maxRetries) {
             retries++
             _error.value = "Connection lost. Reconnecting… ($retries)"
@@ -424,7 +486,9 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         if (it.progressKey.isNotBlank()) markFinished(it)
         if (it.kind == "episode" && settings.autoPlayNext && _index.value < _queue.value.size - 1) {
             start(_index.value + 1)
-        } else if (!it.isLive) {
+        } else if (it.isLive) {
+            reconnectLive()
+        } else {
             _ended.value++
         }
     }
@@ -464,9 +528,11 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     fun togglePause() {
         if (usingVlc) {
             if (vlc.isPlaying) vlc.pause() else vlc.play()
+            wantPlay = vlc.isPlaying.not()
             return
         }
         val p = built ?: return
+        wantPlay = !p.playWhenReady
         if (p.isPlaying) p.pause() else p.play()
     }
 
@@ -537,6 +603,8 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     fun stop() {
         saveProgress()
         progressJob?.cancel()
+        reconnectJob?.cancel()
+        watchdogJob?.cancel()
         recentJob?.let { j -> if (!j.isCompleted) j.cancel() }
         built?.stop()
         built?.clearMediaItems()
@@ -550,11 +618,19 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     }
 
     fun pause() {
+        wantPlay = false
         if (usingVlc) vlc.pause() else built?.pause()
     }
 
     fun resumeIfReady() {
-        if (_item.value == null) return
+        val cur = _item.value ?: return
+        val wasPaused = !wantPlay
+        wantPlay = true
+        // live TV coming back from the background: start again at the live point
+        if (cur.isLive && wasPaused) {
+            start(_index.value)
+            return
+        }
         if (usingVlc) {
             if (vlc.hasMedia && !vlc.isPlaying) vlc.play()
             return

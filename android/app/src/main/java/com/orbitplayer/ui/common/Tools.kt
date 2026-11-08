@@ -204,10 +204,14 @@ fun SpeedTestScreen(vm: AppViewModel) {
     var speed by remember { mutableDoubleStateOf(0.0) }
     var result by remember { mutableStateOf<SpeedResult?>(null) }
     val again = remember { FocusRequester() }
+    var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    if (LocalIsTv.current) com.orbitplayer.ui.tv.TvEntryPoint(again)
     fun start() {
         result = null
         speed = 0.0
-        scope.launch {
+        phase = "ping"
+        job?.cancel()
+        job = scope.launch {
             vm.playback.stop() // a playing stream would share the line (and the server's connection limit)
             val ch = vm.groupChannels.value.firstOrNull() ?: vm.channels.value.firstOrNull()
             val providerUrl = ch?.let { runCatching { vm.repo.channelUrl(it) }.getOrNull() }
@@ -216,7 +220,14 @@ fun SpeedTestScreen(vm: AppViewModel) {
             phase = "done"
         }
     }
-    LaunchedEffect(Unit) { start() }
+    LaunchedEffect(Unit) {
+        start()
+        // the screen always has a button with focus (Stop while measuring, Run again after)
+        repeat(5) {
+            kotlinx.coroutines.delay(80)
+            if (runCatching { again.requestFocus() }.isSuccess) return@LaunchedEffect
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         PageTitle("Speed test", vm)
         Column(Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -264,9 +275,16 @@ fun SpeedTestScreen(vm: AppViewModel) {
                     )
                     Text("Measured on one live channel. A channel needs about 3–8 Mbps for HD and 15–25 Mbps for 4K.", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
                 }
-                Spacer(Modifier.height(16.dp))
+            }
+            Spacer(Modifier.height(16.dp))
+            if (result == null && phase != "done") {
+                OrbitButton("Stop", focusRequester = again) {
+                    job?.cancel()
+                    phase = "done"
+                    result = SpeedResult(downloadMbps = speed, error = if (speed <= 0.05) "Stopped" else "")
+                }
+            } else {
                 OrbitButton("Run again", primary = true, focusRequester = again) { start() }
-                LaunchedEffect(Unit) { runCatching { again.requestFocus() } }
             }
         }
     }
@@ -285,6 +303,14 @@ fun DiagnosticsScreen(vm: AppViewModel) {
     var step by remember { mutableStateOf("") }
     var run by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
+    val runFocus = remember { FocusRequester() }
+    if (tv) com.orbitplayer.ui.tv.TvEntryPoint(runFocus)
+    LaunchedEffect(Unit) {
+        repeat(5) {
+            kotlinx.coroutines.delay(80)
+            if (runCatching { runFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+        }
+    }
     LaunchedEffect(run) {
         running = true
         items = runDiagnostics(vm, context, tv) { step = it }
@@ -293,7 +319,7 @@ fun DiagnosticsScreen(vm: AppViewModel) {
     Column(Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { PageTitle("Diagnostics", vm) }
-            OrbitButton("Run again", enabled = !running) { run++ }
+            OrbitButton(if (running) "Checking…" else "Run again", enabled = !running, focusRequester = runFocus) { run++ }
             Spacer(Modifier.size(16.dp))
         }
         if (running) Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {

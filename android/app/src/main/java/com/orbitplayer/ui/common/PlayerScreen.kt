@@ -589,7 +589,7 @@ private fun InfoBanner(vm: AppViewModel, item: PlayItem, nn: NowNext?, quality: 
             .padding(start = 40.dp, end = 40.dp, top = 40.dp, bottom = 28.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            if (ch != null) ChannelLogo(ch.logo, item.title, 96.dp, 56.dp)
+            if (ch != null) ChannelLogo(ch.logo, ch.name, 96.dp, 56.dp)
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (ch != null && vm.settings.value.showChannelNumbers) Text("${ch.num}", color = c.accent, style = MaterialTheme.typography.headlineSmall)

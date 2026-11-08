@@ -228,8 +228,16 @@ fun ChannelLogo(url: String, name: String, width: Dp = 64.dp, height: Dp = 40.dp
         Modifier.size(width, height).clip(RoundedCornerShape(6.dp)).background(if (c.isLight) Color(0x0F000000) else Color(0x14FFFFFF)),
         contentAlignment = Alignment.Center,
     ) {
-        if (url.isNotBlank()) {
-            AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().padding(4.dp))
+        // the playlist's logo; if it is missing or doesn't load, a logo found by name (LogoFinder)
+        val found = com.orbitplayer.data.LogoFinder.forName(name)
+        var failed by remember(url) { mutableStateOf(false) }
+        val model = if (url.isNotBlank() && !failed) url else found
+        if (!model.isNullOrBlank()) {
+            AsyncImage(
+                model = model, contentDescription = null, contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().padding(4.dp),
+                onError = { if (model == url) failed = true },
+            )
         } else {
             Text(initials(name), style = MaterialTheme.typography.labelLarge, color = c.textMuted)
         }

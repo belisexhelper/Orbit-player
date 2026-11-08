@@ -1,5 +1,6 @@
 package com.orbitplayer
 
+import kotlinx.coroutines.launch
 import android.app.Application
 import com.orbitplayer.core.Store
 import com.orbitplayer.data.ContentRepository
@@ -40,6 +41,7 @@ class App : Application() {
         playback = PlaybackManager(this, store, repo)
         downloads = Downloads(this, db)
         updater = com.orbitplayer.core.Updater(this, appScope)
+        appScope.launch { com.orbitplayer.data.LogoFinder.loadSaved(this@App) }
     }
 }
 

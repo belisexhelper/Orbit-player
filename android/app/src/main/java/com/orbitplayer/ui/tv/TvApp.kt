@@ -132,6 +132,14 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
     val playerOpen by vm.playerOpen.collectAsState()
     val settings by vm.settings.collectAsState()
     var railFocused by remember { mutableStateOf(false) }
+    // the menu opens only when focus stays in it for a moment, so it never flashes while focus passes through
+    var railOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(railFocused) {
+        if (railFocused) {
+            delay(180)
+            railOpen = true
+        } else railOpen = false
+    }
     var askExit by remember { mutableStateOf(false) }
     val railFocus = remember { FocusRequester() }
     val contentFocus = remember { FocusRequester() }
@@ -253,8 +261,8 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
             }
         }
         // Side menu: icons only, expands with labels when focused
-        val width by animateDpAsState(if (railFocused) RAIL_EXPANDED else RAIL_COLLAPSED, tween(160), label = "rail")
-        if (railFocused) Box(Modifier.fillMaxSize().background(Color(0x99000000)))
+        val width by animateDpAsState(if (railOpen) RAIL_EXPANDED else RAIL_COLLAPSED, tween(160), label = "rail")
+        if (railOpen) Box(Modifier.fillMaxSize().background(Color(0x99000000)))
         Column(
             Modifier
                 .width(width)
@@ -281,7 +289,7 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                     Box(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(Orbit.colors.accent), contentAlignment = Alignment.Center) {
                         Text("O", color = Orbit.colors.onAccent, fontWeight = FontWeight.Bold)
                     }
-                    if (railFocused) Text("  Orbit Player", color = Orbit.colors.text, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                    if (railOpen) Text("  Orbit Player", color = Orbit.colors.text, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 }
             }
             RAIL.forEach { item ->
@@ -299,7 +307,7 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                 ) { focused ->
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(item.icon, item.label, Modifier.size(24.dp), tint = if (active || focused) Orbit.colors.accent else Orbit.colors.textMuted)
-                        if (railFocused) {
+                        if (railOpen) {
                             Spacer(Modifier.width(16.dp))
                             Text(item.label, color = if (focused || active) Orbit.colors.text else Orbit.colors.textMuted, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                         }

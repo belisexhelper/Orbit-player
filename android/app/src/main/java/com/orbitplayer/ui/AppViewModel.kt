@@ -507,5 +507,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         repo.syncAll()
         app.downloads.refresh()
+        // logos for channels without one (in the background)
+        app.appScope.launch { com.orbitplayer.data.LogoFinder.refresh(app, app.db) }
     }
 }

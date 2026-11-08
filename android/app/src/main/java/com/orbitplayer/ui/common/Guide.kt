@@ -1,5 +1,11 @@
 package com.orbitplayer.ui.common
 
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.orbitplayer.ui.tv.TvEntryPoint
+import com.orbitplayer.ui.components.ListRow
+import com.orbitplayer.ui.components.listItemFocus
+import com.orbitplayer.ui.components.restoreListFocus
+import com.orbitplayer.ui.components.rememberListFocus
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.foundation.background
@@ -91,8 +97,6 @@ fun GuideScreen(vm: AppViewModel) {
     val c = Orbit.colors
     var windowStart by remember { mutableLongStateOf(guideStart()) }
     var focused by remember { mutableStateOf<Pair<ChannelEntity, ProgramEntity>?>(null) }
-    var pickGroup by remember { mutableStateOf(false) }
-    var groupsPanel by remember { mutableStateOf(false) }
     var details by remember { mutableStateOf<Pair<ChannelEntity, ProgramEntity>?>(null) }
     val minStart = guideStart() - settings.epgPastDays * 86_400_000L
     val maxStart = guideStart() + 7 * 86_400_000L
@@ -106,17 +110,40 @@ fun GuideScreen(vm: AppViewModel) {
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(start = if (tv) 20.dp else 0.dp, end = if (tv) 24.dp else 0.dp, top = if (tv) 18.dp else 0.dp)) {
+    // TV: groups on the left (like Live TV), the guide grid on the right
+    val groupFocus = rememberListFocus()
+    if (tv) TvEntryPoint(groupFocus.requester)
+    var pendingGroup by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(pendingGroup) {
+        val g = pendingGroup ?: return@LaunchedEffect
+        delay(250)
+        if (g != vm.selectedGroup.value) vm.selectGroup(g)
+    }
+    Row(Modifier.fillMaxSize()) {
+    if (tv) {
+        val gState = rememberLazyListState((groups.indexOfFirst { it.id == selected } - 3).coerceAtLeast(0))
+        LazyColumn(
+            state = gState,
+            modifier = Modifier.width(220.dp).fillMaxHeight().padding(start = 12.dp, top = 18.dp).restoreListFocus(groupFocus),
+            contentPadding = PaddingValues(bottom = 24.dp),
+        ) {
+            itemsIndexed(groups, key = { _, g -> g.id }) { _, g ->
+                ListRow(
+                    g.name,
+                    modifier = Modifier.listItemFocus(groupFocus, g.id, g.id == selected),
+                    selected = g.id == selected,
+                    onFocus = { pendingGroup = g.id },
+                    trailing = { Text("${g.count}", color = c.textMuted, style = MaterialTheme.typography.bodySmall) },
+                ) { vm.selectGroup(g.id) }
+            }
+        }
+    }
+    Column(Modifier.weight(1f).fillMaxHeight().padding(start = if (tv) 14.dp else 0.dp, end = if (tv) 24.dp else 0.dp, top = if (tv) 18.dp else 0.dp)) {
         // header
         Row(Modifier.fillMaxWidth().padding(horizontal = if (tv) 0.dp else 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("TV guide", color = c.text, style = MaterialTheme.typography.headlineSmall)
+            Text("Catch-up", color = c.text, style = MaterialTheme.typography.headlineSmall)
             Text(Fmt.date(windowStart + HALF_HOUR), color = c.textMuted, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            if (tv) {
-                OrbitButton("Group: " + (groups.firstOrNull { it.id == selected }?.name ?: "All"), icon = Icons.Filled.ArrowDropDown) { groupsPanel = true }
-                OrbitButton("Now") { windowStart = guideStart() }
-            } else {
-                OrbitButton("Now") { windowStart = guideStart() }
-            }
+            if (!tv) OrbitButton("Now") { windowStart = guideStart() }
         }
         if (!tv) {
             LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -143,22 +170,19 @@ fun GuideScreen(vm: AppViewModel) {
         EpgGrid(
             channels = channels,
             windowStart = windowStart,
-            visibleMinutes = if (tv) 150 else 120,
+            visibleMinutes = 120,
             displayName = vm::displayName,
             loadPrograms = { ch, from, to -> vm.programs(ch, from, to) },
             onWindowChange = { windowStart = it.coerceIn(minStart, maxStart) },
             canGoBack = { _ -> windowStart > minStart },
-            onChannelLeft = if (tv) ({ groupsPanel = true }) else null,
-            refocusKey = selected,
             onProgramFocus = { ch, p -> focused = ch to p },
             onProgramClick = ::open,
             onProgramLongClick = { ch, p -> details = ch to p },
             onChannelClick = { ch -> vm.playChannel(ch, channels) },
         )
     }
+    }
 
-    if (pickGroup) ChoiceDialog("Group", groups.map { it.id to "${it.name}  (${it.count})" }, selected, { pickGroup = false }) { vm.selectGroup(it) }
-    if (groupsPanel) GuideGroupsPanel(groups, selected, onPick = { vm.selectGroup(it); groupsPanel = false }, onClose = { groupsPanel = false })
     details?.let { (ch, p) ->
         val now = System.currentTimeMillis()
         ActionsDialog(
@@ -187,12 +211,10 @@ fun EpgGrid(
     onProgramClick: (ChannelEntity, ProgramEntity) -> Unit,
     onProgramLongClick: (ChannelEntity, ProgramEntity) -> Unit,
     onChannelClick: (ChannelEntity) -> Unit,
-    onChannelLeft: (() -> Unit)? = null,
-    refocusKey: Any? = null,
 ) {
     val tv = LocalIsTv.current
     val c = Orbit.colors
-    val channelCol: Dp = if (tv) 210.dp else 116.dp
+    val channelCol: Dp = if (tv) 190.dp else 116.dp
     val rowH: Dp = if (tv) 60.dp else 64.dp
     val windowMs = visibleMinutes * 60_000L
     val density = LocalDensity.current
@@ -245,10 +267,7 @@ fun EpgGrid(
                         Row(Modifier.fillMaxWidth().height(rowH).padding(vertical = 2.dp)) {
                             Focusable(
                                 onClick = { onChannelClick(ch) },
-                                modifier = Modifier.width(channelCol - 4.dp).fillMaxHeight().onPreviewKeyEvent { ev ->
-                                    // TV: Left on the channel column opens the groups
-                                    if (onChannelLeft != null && ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionLeft) { onChannelLeft(); true } else false
-                                },
+                                modifier = Modifier.width(channelCol - 4.dp).fillMaxHeight(),
                                 shape = RoundedCornerShape(8.dp),
                                 scaleOnFocus = 1f,
                             ) { _ ->
@@ -329,45 +348,6 @@ fun EpgGrid(
                     Box(Modifier.offset(x = channelCol + xOf(now)).width(2.dp).fillMaxHeight().background(c.accent))
                 }
             }
-        }
-    }
-    LaunchedEffect(refocusKey) {
-        repeat(5) {
-            delay(150)
-            if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect
-        }
-    }
-}
-
-/** TV: groups list over the left side of the guide */
-@Composable
-private fun GuideGroupsPanel(groups: List<com.orbitplayer.ui.ChannelGroup>, selected: String, onPick: (String) -> Unit, onClose: () -> Unit) {
-    val c = Orbit.colors
-    val fr = remember { FocusRequester() }
-    val idx = groups.indexOfFirst { it.id == selected }.coerceAtLeast(0)
-    val state = androidx.compose.foundation.lazy.rememberLazyListState((idx - 3).coerceAtLeast(0))
-    androidx.activity.compose.BackHandler { onClose() }
-    Box(Modifier.fillMaxSize().background(Color(0x99000000))) {
-        Column(Modifier.width(300.dp).fillMaxHeight().background(c.surface).padding(10.dp)) {
-            Text("Groups", Modifier.padding(10.dp), color = c.text, style = MaterialTheme.typography.titleLarge)
-            LazyColumn(state = state, modifier = Modifier.onPreviewKeyEvent { e ->
-                if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) { onClose(); true } else false
-            }) {
-                itemsIndexed(groups, key = { _, g -> g.id }) { _, g ->
-                    com.orbitplayer.ui.components.ListRow(
-                        g.name,
-                        selected = g.id == selected,
-                        focusRequester = if (g.id == selected) fr else null,
-                        trailing = { Text("${g.count}", color = c.textMuted, style = MaterialTheme.typography.bodySmall) },
-                    ) { onPick(g.id) }
-                }
-            }
-        }
-    }
-    LaunchedEffect(Unit) {
-        repeat(6) {
-            delay(50)
-            if (runCatching { fr.requestFocus() }.isSuccess) return@LaunchedEffect
         }
     }
 }

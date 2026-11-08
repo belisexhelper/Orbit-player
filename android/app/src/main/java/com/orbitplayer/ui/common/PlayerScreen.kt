@@ -704,7 +704,7 @@ private fun OptionsBar(item: PlayItem, favorite: Boolean, aspect: String, engine
             IconAction(Icons.Filled.Bedtime, "Sleep") { onAction("sleep") }
             if (item.isLive) IconAction(if (favorite) Icons.Filled.Star else Icons.Filled.StarBorder, if (favorite) "Unfavorite" else "Favorite", active = favorite) { onAction("fav") }
             if (item.isLive && item.channel?.archive == true) IconAction(Icons.Filled.Replay, "Start over") { onAction("startover") }
-            if (item.isLive) IconAction(Icons.Filled.DateRange, "TV guide") { onAction("guide") }
+            if (item.isLive) IconAction(Icons.Filled.DateRange, "Catch-up") { onAction("guide") }
             IconAction(Icons.Filled.Refresh, "Reload") { onAction("retry") }
             IconAction(Icons.Filled.SwapHoriz, if (engine == "vlc") "Engine: VLC" else "Engine: Exo") { onAction("engine") }
             IconAction(Icons.Filled.OpenInNew, "Other player") { onAction("external") }

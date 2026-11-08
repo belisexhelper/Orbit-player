@@ -38,7 +38,6 @@ sealed class Route {
     data object Home : Route()
     data object Live : Route()
     data object Guide : Route()
-    data object Catchup : Route()
     data object Movies : Route()
     data object Series : Route()
     data class MovieDetail(val key: String) : Route()

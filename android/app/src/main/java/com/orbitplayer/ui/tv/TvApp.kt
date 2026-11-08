@@ -82,8 +82,7 @@ private data class RailItem(val route: Route, val label: String, val icon: Image
 private val RAIL = listOf(
     RailItem(Route.Search, "Search", Icons.Filled.Search),
     RailItem(Route.Live, "Live TV", Icons.Filled.LiveTv),
-    RailItem(Route.Guide, "TV guide", Icons.Filled.DateRange),
-    RailItem(Route.Catchup, "Catch-up", Icons.Filled.History),
+    RailItem(Route.Guide, "Catch-up", Icons.Filled.History),
     RailItem(Route.Movies, "Movies", Icons.Filled.Movie),
     RailItem(Route.Series, "Series", Icons.Filled.VideoLibrary),
     RailItem(Route.Favorites, "My list", Icons.Filled.Star),
@@ -178,7 +177,6 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                 when (val r = route) {
                     Route.Live -> TvLiveScreen(vm)
                     Route.Guide -> GuideScreen(vm)
-                    Route.Catchup -> com.orbitplayer.ui.common.CatchupScreen(vm)
                     Route.Movies -> VodBrowseScreen(vm, series = false)
                     Route.Series -> VodBrowseScreen(vm, series = true)
                     is Route.MovieDetail -> MovieDetailScreen(vm, r.key)

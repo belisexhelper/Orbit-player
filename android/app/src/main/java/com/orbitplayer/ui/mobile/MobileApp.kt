@@ -111,7 +111,7 @@ private data class Tab(val route: Route, val label: String, val icon: ImageVecto
 private val TABS = listOf(
     Tab(Route.Home, "Home", Icons.Filled.Home),
     Tab(Route.Live, "Live", Icons.Filled.LiveTv),
-    Tab(Route.Guide, "Guide", Icons.Filled.DateRange),
+    Tab(Route.Guide, "Catch-up", Icons.Filled.History),
     Tab(Route.Movies, "Movies", Icons.Filled.Movie),
     Tab(Route.Series, "Series", Icons.Filled.VideoLibrary),
 )
@@ -199,7 +199,6 @@ private fun MobileContent(vm: AppViewModel, wide: Boolean) {
         Route.Live -> MobileLive(vm, wide)
         Route.ChannelView -> if (wide) MobileLive(vm, wide = true) else ChannelView(vm, wide = false)
         Route.Guide -> GuideScreen(vm)
-        Route.Catchup -> com.orbitplayer.ui.common.CatchupScreen(vm)
         Route.Movies -> VodBrowseScreen(vm, series = false)
         Route.Series -> VodBrowseScreen(vm, series = true)
         is Route.MovieDetail -> MovieDetailScreen(vm, r.key)
@@ -307,7 +306,7 @@ fun MobileHomeContent(
         item {
             val tiles: List<Triple<String, ImageVector, Pair<Route, String>>> = listOf(
                 Triple("Live TV", Icons.Filled.LiveTv, Route.Live to "${counts.first} channels"),
-                Triple("TV guide", Icons.Filled.DateRange, Route.Guide to "What's on"),
+                Triple("Catch-up", Icons.Filled.History, Route.Guide to "Guide & archive"),
                 Triple("Movies", Icons.Filled.Movie, Route.Movies to "${counts.second} titles"),
                 Triple("Series", Icons.Filled.VideoLibrary, Route.Series to "${counts.third} shows"),
             )
@@ -324,7 +323,6 @@ fun MobileHomeContent(
         }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                IconAction(Icons.Filled.History, "Catch-up") { onRoute(Route.Catchup) }
                 IconAction(Icons.Filled.Star, "Favorites") { onRoute(Route.Favorites) }
                 IconAction(Icons.Filled.Download, "Downloads") { onRoute(Route.Downloads) }
                 IconAction(Icons.Filled.Speed, "Speed test") { onRoute(Route.SpeedTest) }

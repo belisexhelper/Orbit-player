@@ -96,11 +96,23 @@ val RAIL_COLLAPSED = 76.dp
 /** Where focus lands when moving from the side menu into a screen (the screen sets it, e.g. the playing channel) */
 class ContentEntry {
     var requester: FocusRequester? = null
+    /** where focus goes when the full-screen player closes (e.g. the channel that is playing) */
+    var afterPlayer: FocusRequester? = null
     /** route whose screen last had focus (then focus is restored there instead of the entry point) */
     var visited: Route? = null
 }
 
 val LocalContentEntry = staticCompositionLocalOf { ContentEntry() }
+
+/** Registers where focus goes when the player closes on this screen (the playing channel) */
+@Composable
+fun TvAfterPlayer(requester: FocusRequester) {
+    val entry = LocalContentEntry.current
+    DisposableEffect(requester) {
+        entry.afterPlayer = requester
+        onDispose { if (entry.afterPlayer === requester) entry.afterPlayer = null }
+    }
+}
 
 /** Registers [requester] as the entry point of the current TV screen */
 @Composable
@@ -173,10 +185,10 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
     var beforePlayer by remember { mutableStateOf<FocusRequester?>(null) }
     DisposableEffect(vm) {
         vm.beforePlayerCloses = {
-            // Live TV: the channel that is playing (it may differ after zapping); elsewhere: the element used before
-            val liveEntry = if (vm.route == Route.Live) entry.requester else null
-            val saved = liveEntry ?: beforePlayer
-            val ok = saved != null && runCatching { saved.requestFocus() }.isSuccess
+            // the playing channel when the screen offers it (it may differ after zapping), else the element used before
+            val playing = entry.afterPlayer
+            val ok = (playing != null && runCatching { playing.requestFocus() }.isSuccess) ||
+                (beforePlayer?.let { b -> runCatching { b.requestFocus() }.isSuccess } == true)
             if (!ok) {
                 val e = entry.requester
                 if (e == null || runCatching { e.requestFocus() }.isFailure) runCatching { contentFocus.requestFocus() }

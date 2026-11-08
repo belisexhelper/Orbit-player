@@ -114,6 +114,10 @@ fun GuideScreen(vm: AppViewModel) {
     // TV: groups on the left (like Live TV), the guide grid on the right
     val groupFocus = rememberListFocus()
     if (tv) TvEntryPoint(groupFocus.requester)
+    // back from the player: the channel that is playing (also after changing channel/group in the player)
+    val playingItem by vm.playback.item.collectAsState()
+    val playingFocus = remember { FocusRequester() }
+    if (tv) com.orbitplayer.ui.tv.TvAfterPlayer(playingFocus)
     var pendingGroup by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(pendingGroup) {
         val g = pendingGroup ?: return@LaunchedEffect
@@ -180,6 +184,8 @@ fun GuideScreen(vm: AppViewModel) {
             onProgramClick = ::open,
             onProgramLongClick = { ch, p -> details = ch to p },
             onChannelClick = { ch -> vm.playChannel(ch, channels) },
+            playingKey = if (tv) playingItem?.channel?.key else null,
+            playingFocus = playingFocus,
         )
     }
     }
@@ -212,6 +218,8 @@ fun EpgGrid(
     onProgramClick: (ChannelEntity, ProgramEntity) -> Unit,
     onProgramLongClick: (ChannelEntity, ProgramEntity) -> Unit,
     onChannelClick: (ChannelEntity) -> Unit,
+    playingKey: String? = null,
+    playingFocus: FocusRequester? = null,
 ) {
     val tv = LocalIsTv.current
     val c = Orbit.colors
@@ -245,7 +253,16 @@ fun EpgGrid(
             }
             Box(Modifier.fillMaxSize()) {
                 // a different channel list (another group) starts at the top
-                val listState = remember(channels.firstOrNull()?.key, channels.size) { androidx.compose.foundation.lazy.LazyListState() }
+                val listState = remember(channels.firstOrNull()?.key, channels.size) {
+                    androidx.compose.foundation.lazy.LazyListState((channels.indexOfFirst { it.key == playingKey } - 2).coerceAtLeast(0))
+                }
+                // keep the playing channel on screen while zapping in the player
+                LaunchedEffect(playingKey, channels.size) {
+                    val i = channels.indexOfFirst { it.key == playingKey }
+                    if (i < 0) return@LaunchedEffect
+                    val vis = listState.layoutInfo.visibleItemsInfo
+                    if (vis.none { it.index == i } || vis.first().index == i || vis.last().index == i) listState.scrollToItem((i - 2).coerceAtLeast(0))
+                }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
@@ -269,7 +286,10 @@ fun EpgGrid(
                             value = loadPrograms(ch, b - 2 * 3600_000L, b + 8 * 3600_000L)
                         }
                         Row(Modifier.fillMaxWidth().height(rowH).padding(vertical = 2.dp)) {
+                            val isPlayingRow = ch.key == playingKey && playingFocus != null
+                            val nowVisible = isPlayingRow && programs.any { it.start <= now && it.stop > now && it.stop > windowStart && it.start < windowStart + windowMs }
                             Focusable(
+                                focusRequester = if (isPlayingRow && !nowVisible) playingFocus else null,
                                 onClick = { onChannelClick(ch) },
                                 modifier = Modifier.width(channelCol - 4.dp).fillMaxHeight(),
                                 shape = RoundedCornerShape(8.dp),
@@ -320,7 +340,7 @@ fun EpgGrid(
                                             shape = RoundedCornerShape(6.dp),
                                             color = if (isNow) c.accent.copy(alpha = 0.16f) else c.surface,
                                             scaleOnFocus = 1f,
-                                            focusRequester = if (i == 0 && pi == 0) first else null,
+                                            focusRequester = if (isPlayingRow && nowVisible && isNow) playingFocus else if (i == 0 && pi == 0) first else null,
                                         ) { focused ->
                                             Column(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 6.dp)) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {

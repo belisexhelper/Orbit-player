@@ -169,7 +169,10 @@ fun TvLiveContent(
     val groupFocus = rememberListFocus()
     val channelFocus = rememberListFocus()
     // coming from the menu or back from the player: the channel that is playing
-    if (channels.isNotEmpty()) TvEntryPoint(firstFocus)
+    if (channels.isNotEmpty()) {
+        TvEntryPoint(firstFocus)
+        TvAfterPlayer(firstFocus)
+    }
     val groupState = rememberLazyListState((groups.indexOfFirst { it.id == selectedGroup } - 3).coerceAtLeast(0))
     // keep the current group in view (it can change from the player's channel list)
     LaunchedEffect(selectedGroup, groups.size) {

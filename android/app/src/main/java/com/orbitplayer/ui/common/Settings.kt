@@ -321,6 +321,10 @@ private fun UpdateCard(vm: AppViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val first = remember { FocusRequester() }
+    // always ask GitHub again when this screen opens, so an older result is never shown
+    LaunchedEffect(Unit) {
+        if (state !is Updater.State.Downloading && state !is Updater.State.Checking) updater.check()
+    }
     Column(
         Modifier.fillMaxWidth().padding(vertical = 6.dp).background(c.surface, RoundedCornerShape(12.dp)).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -344,7 +348,10 @@ private fun UpdateCard(vm: AppViewModel) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             when (val st = state) {
-                is Updater.State.Available -> OrbitButton("Download and install (${Fmt.bytes(st.release.size)})", icon = Icons.Filled.Download, primary = true, focusRequester = first) { updater.download(st.release) }
+                is Updater.State.Available -> {
+                    OrbitButton("Download and install (${Fmt.bytes(st.release.size)})", icon = Icons.Filled.Download, primary = true, focusRequester = first) { updater.download(st.release) }
+                    OrbitButton("Check again", icon = Icons.Filled.Refresh) { scope.launch { updater.check() } }
+                }
                 is Updater.State.Downloading -> OrbitButton("Cancel", focusRequester = first) { updater.cancel() }
                 is Updater.State.Ready -> OrbitButton("Install", icon = Icons.Filled.SystemUpdate, primary = true, focusRequester = first) {
                     vm.closePlayer(stop = true)

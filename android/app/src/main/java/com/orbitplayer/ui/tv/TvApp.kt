@@ -168,8 +168,20 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
             if (!railFocused) return@LaunchedEffect
         }
     }
-    // after the full-screen player: back to the element that was focused before it opened
+    // after the full-screen player: back to the element that was focused before it opened.
+    // Done just before the player disappears, so focus never passes through the menu.
     var beforePlayer by remember { mutableStateOf<FocusRequester?>(null) }
+    DisposableEffect(vm) {
+        vm.beforePlayerCloses = {
+            val saved = beforePlayer
+            val ok = saved != null && runCatching { saved.requestFocus() }.isSuccess
+            if (!ok) {
+                val e = entry.requester
+                if (e == null || runCatching { e.requestFocus() }.isFailure) runCatching { contentFocus.requestFocus() }
+            }
+        }
+        onDispose { vm.beforePlayerCloses = null }
+    }
     LaunchedEffect(playerOpen) {
         if (playerOpen) {
             beforePlayer = com.orbitplayer.ui.components.FocusMemory.last

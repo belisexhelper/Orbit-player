@@ -335,7 +335,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         store.lastChannelKey = ""
     }
 
+    /** TV: moves focus back to the screen before the player disappears (so the menu doesn't flash) */
+    var beforePlayerCloses: (() -> Unit)? = null
+
     fun closePlayer(stop: Boolean) {
+        if (playerOpen.value) runCatching { beforePlayerCloses?.invoke() }
         playerOpen.value = false
         if (stop) playback.stop()
     }

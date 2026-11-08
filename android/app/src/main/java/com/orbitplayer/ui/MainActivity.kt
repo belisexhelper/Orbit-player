@@ -72,13 +72,19 @@ class MainActivity : ComponentActivity() {
                     if (inPip.value) {
                         PlayerScreen(vm, inPip = true)
                     } else {
-                        if (isTv) TvApp(vm, onExit = { finish() }) else MobileApp(vm, onExit = { finish() })
+                        if (isTv) TvApp(vm, onExit = { exitApp() }) else MobileApp(vm, onExit = { exitApp() })
                         if (playerOpen) PlayerScreen(vm, inPip = false, onEnterPip = { enterPip() })
                         crashText?.let { CrashReport(it) { crashText = null } }
                     }
                 }
             }
         }
+    }
+
+    /** Exit chosen by the user: stop playback and remove the app from the recent apps list */
+    private fun exitApp() {
+        vm.playback.stop()
+        finishAndRemoveTask()
     }
 
     private fun setFullscreen(on: Boolean) {

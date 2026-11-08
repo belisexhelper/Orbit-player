@@ -163,6 +163,7 @@ fun TvLiveContent(
     val start = channels.indexOfFirst { it.key == playingKey }.coerceAtLeast(0)
     val listState = rememberLazyListState((start - 3).coerceAtLeast(0))
     val firstFocus = remember { FocusRequester() }
+    if (channels.isNotEmpty()) TvEntryPoint(firstFocus)
     val groupState = rememberLazyListState((groups.indexOfFirst { it.id == selectedGroup } - 3).coerceAtLeast(0))
     var pendingGroup by remember { mutableStateOf<ChannelGroup?>(null) }
 

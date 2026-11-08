@@ -88,7 +88,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ls app/build/outputs/roborazzi/*.png || exit 0
+          ls app/build/outputs/roborazzi/ || exit 0
+          touch app/build/outputs/roborazzi/nav-log.txt
           gh release delete screenshots --cleanup-tag -y || true
-          gh release create screenshots app/build/outputs/roborazzi/*.png --prerelease \
+          gh release create screenshots app/build/outputs/roborazzi/*.png app/build/outputs/roborazzi/*.txt --prerelease \
             --title "Screenshots ${VERSION_CODE}" --notes "Rendered with test data from commit ${GITHUB_SHA::7}."

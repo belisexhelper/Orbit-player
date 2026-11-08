@@ -59,6 +59,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -113,6 +115,7 @@ fun SettingsScreen(vm: AppViewModel) {
     if (tv) {
         var current by remember { mutableStateOf(sections.first().id) }
         val first = remember { FocusRequester() }
+        com.orbitplayer.ui.tv.TvEntryPoint(first)
         Row(Modifier.fillMaxSize().padding(start = 20.dp, end = 24.dp, top = 18.dp)) {
             Column(Modifier.width(280.dp).fillMaxHeight()) {
                 Text("Settings", Modifier.padding(start = 14.dp, bottom = 10.dp), color = c.text, style = MaterialTheme.typography.headlineSmall)
@@ -123,13 +126,18 @@ fun SettingsScreen(vm: AppViewModel) {
                             selected = s.id == current,
                             leading = { Icon(s.icon, null, Modifier.size(22.dp), tint = if (s.id == current) c.accent else c.textMuted) },
                             onFocus = { current = s.id },
-                            focusRequester = if (s.id == sections.first().id) first else null,
+                            focusRequester = if (s.id == current) first else null,
                         ) { current = s.id }
                     }
                 }
             }
             Spacer(Modifier.width(20.dp))
-            Box(Modifier.weight(1f).fillMaxHeight().focusRestorer().focusGroup()) { SectionContent(vm, current) }
+            Box(
+                Modifier.weight(1f).fillMaxHeight()
+                    .focusProperties { exit = { d -> if (d == FocusDirection.Left) first else FocusRequester.Cancel } }
+                    .focusRestorer()
+                    .focusGroup(),
+            ) { SectionContent(vm, current) }
         }
         LaunchedEffect(Unit) {
             delay(150)

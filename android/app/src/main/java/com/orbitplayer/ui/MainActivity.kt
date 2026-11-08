@@ -19,6 +19,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -56,7 +60,9 @@ class MainActivity : ComponentActivity() {
                 if (!isTv) setFullscreen(open)
             }
         }
+        val lastCrash = (application as com.orbitplayer.App).takeLastCrash()
         setContent {
+            var crashText by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(lastCrash) }
             val settings by vm.settings.collectAsState()
             val playerOpen by vm.playerOpen.collectAsState()
             OrbitTheme(settings.theme, isTv, settings.fontScale) {
@@ -66,6 +72,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         if (isTv) TvApp(vm, onExit = { finish() }) else MobileApp(vm, onExit = { finish() })
                         if (playerOpen) PlayerScreen(vm, inPip = false, onEnterPip = { enterPip() })
+                        crashText?.let { CrashReport(it) { crashText = null } }
                     }
                 }
             }
@@ -128,5 +135,32 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         vm.playback.resumeIfReady()
+    }
+}
+
+/** Shown once after a crash: the error, so it can be photographed and reported */
+@androidx.compose.runtime.Composable
+private fun CrashReport(text: String, onClose: () -> Unit) {
+    com.orbitplayer.ui.components.OrbitDialog(onClose, "Orbit Player closed unexpectedly last time") {
+        androidx.compose.foundation.layout.Column {
+            androidx.compose.material3.Text(
+                "Please send a photo of this screen so the problem can be fixed.",
+                color = Orbit.colors.textMuted,
+            )
+            androidx.compose.foundation.lazy.LazyColumn(
+                Modifier.padding(vertical = 10.dp).heightIn(max = 300.dp),
+            ) {
+                item {
+                    androidx.compose.material3.Text(
+                        text.lines().filter { it.isNotBlank() }.take(28).joinToString("\n"),
+                        color = Orbit.colors.text,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            com.orbitplayer.ui.components.OrbitButton("Close", primary = true, focusRequester = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }.also { fr ->
+                androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(150); runCatching { fr.requestFocus() } }
+            }) { onClose() }
+        }
     }
 }

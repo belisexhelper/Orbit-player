@@ -41,9 +41,20 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -77,6 +88,25 @@ private val RAIL = listOf(
 )
 
 val RAIL_COLLAPSED = 76.dp
+
+/** Where focus lands when moving from the side menu into a screen (the screen sets it, e.g. the playing channel) */
+class ContentEntry {
+    var requester: FocusRequester? = null
+    /** route whose screen last had focus (then focus is restored there instead of the entry point) */
+    var visited: Route? = null
+}
+
+val LocalContentEntry = staticCompositionLocalOf { ContentEntry() }
+
+/** Registers [requester] as the entry point of the current TV screen */
+@Composable
+fun TvEntryPoint(requester: FocusRequester) {
+    val entry = LocalContentEntry.current
+    DisposableEffect(requester) {
+        entry.requester = requester
+        onDispose { if (entry.requester === requester) entry.requester = null }
+    }
+}
 private val RAIL_EXPANDED = 228.dp
 
 /** TV interface (TiviMate style): collapsible side menu + content */
@@ -88,6 +118,15 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
     var railFocused by remember { mutableStateOf(false) }
     var askExit by remember { mutableStateOf(false) }
     val railFocus = remember { FocusRequester() }
+    val contentFocus = remember { FocusRequester() }
+    val entry = remember { ContentEntry() }
+
+    /** From the menu into the screen: back to the last focused element, else the screen's entry point */
+    fun enterContent() {
+        val target = entry.requester
+        if (entry.visited != route && target != null && runCatching { target.requestFocus() }.isSuccess) return
+        runCatching { contentFocus.requestFocus() }
+    }
     val route = vm.route.let { if (it == Route.Home) Route.Live else it }
     val section = vm.backStack.getOrNull(1)?.let { if (it == Route.Home) Route.Live else it } ?: Route.Live
 
@@ -105,7 +144,17 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Orbit.colors.background)) {
         Row(Modifier.fillMaxSize()) {
             Spacer(Modifier.width(RAIL_COLLAPSED))
-            Box(Modifier.weight(1f).fillMaxHeight()) {
+            // Content: Left from its left edge goes to the menu; focus never wanders off in other directions.
+            // Coming from the menu, focus returns to where it was, else to the screen's entry point.
+            Box(
+                Modifier.weight(1f).fillMaxHeight()
+                    .focusRequester(contentFocus)
+                    .onFocusChanged { if (it.hasFocus) entry.visited = route }
+                    .focusProperties { exit = { d -> if (d == FocusDirection.Left) railFocus else FocusRequester.Cancel } }
+                    .focusRestorer()
+                    .focusGroup(),
+            ) {
+              CompositionLocalProvider(LocalContentEntry provides entry) {
                 when (val r = route) {
                     Route.Live -> TvLiveScreen(vm)
                     Route.Guide -> GuideScreen(vm)
@@ -122,6 +171,7 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                     Route.Diagnostics -> DiagnosticsScreen(vm)
                     else -> TvLiveScreen(vm)
                 }
+              }
             }
         }
         // Side menu: icons only, expands with labels when focused
@@ -133,7 +183,17 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                 .fillMaxHeight()
                 .background(Color(0xFF10141D))
                 .onFocusChanged { railFocused = it.hasFocus }
-                .focusRestorer()
+                // entering the menu always lands on the current section; Right goes back into the screen
+                .onPreviewKeyEvent { e ->
+                    if (e.key == Key.DirectionRight) {
+                        if (e.type == KeyEventType.KeyDown) enterContent()
+                        true
+                    } else false
+                }
+                .focusProperties {
+                    enter = { railFocus }
+                    exit = { FocusRequester.Cancel }
+                }
                 .focusGroup()
                 .padding(vertical = 28.dp, horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -149,7 +209,9 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
             RAIL.forEach { item ->
                 val active = item.route == section
                 Focusable(
-                    onClick = { vm.root(item.route) },
+                    onClick = {
+                        if (item.route == section) enterContent() else vm.root(item.route)
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     color = Color.Transparent,
                     selected = active,

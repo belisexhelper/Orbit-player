@@ -7,7 +7,6 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Rational
 import android.view.WindowManager
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -53,7 +52,6 @@ class MainActivity : ComponentActivity() {
             vm.startup()
             if (vm.settings.value.startOnLastChannel) vm.playLastChannelWhenReady(fullscreen = true)
         }
-        lifecycleScope.launch { vm.messages.collect { Toast.makeText(this@MainActivity, it, Toast.LENGTH_SHORT).show() } }
         // keep the screen on while something plays; phone full screen goes landscape and hides system bars
         lifecycleScope.launch {
             combine(vm.playerOpen, vm.playback.playing) { open, playing -> open to playing }.collect { (open, playing) ->
@@ -74,6 +72,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         if (isTv) TvApp(vm, onExit = { exitApp() }) else MobileApp(vm, onExit = { exitApp() })
                         if (playerOpen) PlayerScreen(vm, inPip = false, onEnterPip = { enterPip() })
+                        com.orbitplayer.ui.components.MessageHost(vm.messages)
                         crashText?.let { CrashReport(it) { crashText = null } }
                     }
                 }

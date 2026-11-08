@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -71,7 +73,7 @@ import com.orbitplayer.ui.components.ProgressLine
 import com.orbitplayer.ui.theme.Orbit
 import kotlinx.coroutines.delay
 
-/** Live TV (TiviMate style): info / preview on top, groups and channels below */
+/** Live TV: groups, channels and the focused channel's programmes (back in time and ahead) */
 @Composable
 fun TvLiveScreen(vm: AppViewModel) {
     val playlists by vm.playlists.collectAsState()
@@ -117,6 +119,20 @@ fun TvLiveScreen(vm: AppViewModel) {
         preview = if (settings.livePreview && !playerOpen && playing?.isLive == true) {
             { PlayerSurface(vm.playback, settings, settings.aspect, Modifier.fillMaxSize()) }
         } else null,
+        loadPrograms = { ch, from, to -> vm.programs(ch, from, to) },
+        onProgramClick = { ch, p ->
+            val now = System.currentTimeMillis()
+            when {
+                p.start <= now && p.stop > now -> vm.playChannel(ch, channels, fullscreen = true)
+                p.stop <= now && ch.archive -> vm.playCatchup(ch, p)
+                p.stop <= now -> vm.toast("This channel has no archive")
+                else -> vm.toast("Starts ${Fmt.date(p.start)} at ${Fmt.time(p.start)}")
+            }
+        },
+        onProgramLongClick = { ch, p ->
+            // hold OK on the programme that is on now: watch it from the beginning
+            if (ch.archive && p.start <= System.currentTimeMillis()) vm.playCatchup(ch, p)
+        },
     )
 
     menuFor?.let { ch ->
@@ -140,7 +156,11 @@ fun TvLiveScreen(vm: AppViewModel) {
     }
 }
 
-/** Stateless layout of the Live screen (also used for screenshots) */
+/**
+ * Stateless layout of the Live screen (also used for screenshots):
+ * groups | channels | programmes of the focused channel (days back and ahead), so going back in time
+ * starts right here: a past programme with ↺ plays from the archive.
+ */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun TvLiveContent(
@@ -161,6 +181,9 @@ fun TvLiveContent(
     onChannelClick: (ChannelEntity) -> Unit,
     onChannelLongPress: (ChannelEntity) -> Unit,
     preview: (@Composable () -> Unit)?,
+    loadPrograms: suspend (ChannelEntity, Long, Long) -> List<ProgramEntity> = { _, _, _ -> emptyList() },
+    onProgramClick: (ChannelEntity, ProgramEntity) -> Unit = { _, _ -> },
+    onProgramLongClick: (ChannelEntity, ProgramEntity) -> Unit = { _, _ -> },
 ) {
     val c = Orbit.colors
     val start = channels.indexOfFirst { it.key == playingKey }.coerceAtLeast(0)
@@ -206,52 +229,13 @@ fun TvLiveContent(
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 24.dp, top = 20.dp)) {
-        // ------- top band: preview + programme of the focused channel -------
-        Row(Modifier.fillMaxWidth().height(196.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Box(
-                Modifier.fillMaxHeight().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)).background(c.surface),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (preview != null) preview()
-                else if (focused != null) Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    ChannelLogo(focused.logo, focused.name, 150.dp, 90.dp)
-                    Spacer(Modifier.height(10.dp))
-                    Text("Press OK to watch", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            Column(Modifier.weight(1f).fillMaxHeight().padding(top = 4.dp)) {
-                val nn = focused?.let { nowNext[it.epgKey] }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        focused?.let { (if (settings.showChannelNumbers) "${it.num}  " else "") + displayName(it) } ?: "",
-                        color = c.accent, style = MaterialTheme.typography.titleMedium, maxLines = 1, modifier = Modifier.weight(1f),
-                    )
-                    Text(Fmt.time(System.currentTimeMillis()), color = c.text, style = MaterialTheme.typography.titleLarge)
-                }
-                Spacer(Modifier.height(6.dp))
-                val p = nn?.now
-                Text(p?.title ?: "No programme information", color = c.text, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (p != null) {
-                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("${Fmt.time(p.start)} – ${Fmt.time(p.stop)}", color = c.textMuted, style = MaterialTheme.typography.bodyMedium)
-                        ProgressLine(progressOf(p), Modifier.width(160.dp), height = 4.dp)
-                        Text("${((p.stop - System.currentTimeMillis()) / 60_000).coerceAtLeast(0)} min left", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (p.description.isNotBlank()) Text(p.description, Modifier.padding(top = 8.dp), color = c.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                }
-                Spacer(Modifier.weight(1f))
-                nn?.next?.let { n -> Text("Next  ${Fmt.time(n.start)}  ${n.title}", color = c.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 1) }
-                if (loadingText.isNotBlank()) Text(loadingText, color = c.accentAlt, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-        Spacer(Modifier.height(14.dp))
-
-        // ------- groups | channels -------
-        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 20.dp, top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        // ------- groups -------
+        Column(Modifier.width(196.dp).fillMaxHeight()) {
+            Text("Live TV", Modifier.padding(start = 8.dp, bottom = 8.dp), color = c.text, style = MaterialTheme.typography.headlineSmall)
             LazyColumn(
                 state = groupState,
-                modifier = Modifier.width(236.dp).fillMaxHeight().restoreListFocus(groupFocus),
+                modifier = Modifier.fillMaxSize().restoreListFocus(groupFocus),
                 contentPadding = PaddingValues(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
@@ -267,12 +251,15 @@ fun TvLiveContent(
                     ) { onGroupFocus(g) }
                 }
             }
+        }
+        // ------- channels -------
+        Box(Modifier.width(300.dp).fillMaxHeight().padding(top = 40.dp)) {
             if (channels.isEmpty()) {
-                EmptyState("No channels in this group", if (loadingText.isNotBlank()) loadingText else "Choose another group on the left.", Modifier.weight(1f))
+                EmptyState("No channels in this group", if (loadingText.isNotBlank()) loadingText else "Choose another group on the left.")
             } else {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.weight(1f).fillMaxHeight().restoreListFocus(channelFocus),
+                    modifier = Modifier.fillMaxSize().restoreListFocus(channelFocus),
                     contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
                     val cTarget = channelFocus.target(channels.map { it.key }, listState.firstVisibleItemIndex)
@@ -293,7 +280,110 @@ fun TvLiveContent(
                 }
             }
         }
+        // ------- the focused channel: preview / now, days, programmes -------
+        Column(Modifier.weight(1f).fillMaxHeight()) {
+            Row(Modifier.fillMaxWidth().height(24.dp), horizontalArrangement = Arrangement.End) {
+                if (loadingText.isNotBlank()) Text(loadingText, Modifier.weight(1f), color = c.accentAlt, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                Text(Fmt.time(System.currentTimeMillis()), color = c.text, style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(10.dp)).background(c.surface)) {
+                if (preview != null) preview()
+                else if (focused != null) Row(Modifier.fillMaxSize().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ChannelLogo(focused.logo, focused.name, 96.dp, 56.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(displayName(focused), color = c.text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val p = nowNext[focused.epgKey]?.now
+                        Text(p?.title ?: "Press OK to watch", color = c.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (p != null) ProgressLine(progressOf(p), Modifier.fillMaxWidth().padding(top = 6.dp), height = 3.dp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            if (focused != null) ChannelDays(focused, loadPrograms, onProgramClick, onProgramLongClick, Modifier.fillMaxSize())
+        }
     }
+}
+
+/** Days (archive back … tomorrow) and the programmes of the chosen day for one channel */
+@Composable
+fun ChannelDays(
+    ch: ChannelEntity,
+    loadPrograms: suspend (ChannelEntity, Long, Long) -> List<ProgramEntity>,
+    onProgramClick: (ChannelEntity, ProgramEntity) -> Unit,
+    onProgramLongClick: (ChannelEntity, ProgramEntity) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = Orbit.colors
+    val now = remember(ch.key) { System.currentTimeMillis() }
+    val today = remember(now) { startOfDay(now) }
+    val back = if (ch.archive) ch.archiveDays.coerceIn(1, 7) else 0
+    var day by remember(ch.key) { mutableStateOf(0) } // 0 = today, -1 = yesterday, 1 = tomorrow
+    val dayStart = today + day * 86_400_000L
+    val programmes by produceState<List<ProgramEntity>?>(null, ch.key, day) {
+        value = null
+        delay(180) // fast scrolling through channels: load only where the user stops
+        value = loadPrograms(ch, dayStart, dayStart + 86_400_000L).filter { it.stop > dayStart && it.start < dayStart + 86_400_000L }
+    }
+    Column(modifier) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 6.dp)) {
+            items((-back..1).toList()) { d ->
+                Focusable(onClick = { day = d }, onFocus = { day = d }, shape = RoundedCornerShape(16.dp), color = if (d == day) c.accent else c.surface, scaleOnFocus = 1.05f) { f ->
+                    Text(dayName(d, today + d * 86_400_000L), Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = if (d == day && !f) c.onAccent else c.text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                }
+            }
+        }
+        val list = programmes
+        when {
+            list == null -> Unit
+            list.isEmpty() -> Text("No programme information for this day", Modifier.padding(8.dp), color = c.textMuted, style = MaterialTheme.typography.bodyMedium)
+            else -> {
+                val nowIdx = list.indexOfFirst { it.start <= now && it.stop > now }
+                val state = remember(ch.key, day) { androidx.compose.foundation.lazy.LazyListState(if (day == 0 && nowIdx > 0) (nowIdx - 2).coerceAtLeast(0) else 0) }
+                LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(4.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+                    items(list, key = { it.id * 31 + it.start }) { p ->
+                        val past = p.stop <= now
+                        val isNow = p.start <= now && p.stop > now
+                        val archived = ch.archive && p.start < now && p.start >= now - ch.archiveDays.coerceAtLeast(1) * 86_400_000L
+                        Focusable(
+                            onClick = { onProgramClick(ch, p) },
+                            onLongClick = { onProgramLongClick(ch, p) },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = if (isNow) c.accent.copy(alpha = 0.14f) else c.surface,
+                            scaleOnFocus = 1.02f,
+                        ) { f ->
+                            Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(Fmt.time(p.start), Modifier.width(48.dp), color = if (isNow) c.accent else c.textMuted, style = MaterialTheme.typography.bodyMedium, fontWeight = if (isNow) FontWeight.Bold else FontWeight.Normal)
+                                Column(Modifier.weight(1f)) {
+                                    Text(p.title, color = if (past && !archived) c.textMuted else c.text, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (f) FontWeight.SemiBold else FontWeight.Normal)
+                                    if (isNow) ProgressLine(progressOf(p, now), Modifier.fillMaxWidth().padding(top = 4.dp), height = 3.dp)
+                                    if (f && archived && !isNow) Text("OK = watch from the archive", color = c.accentAlt, style = MaterialTheme.typography.labelSmall)
+                                    if (f && isNow && ch.archive) Text("OK = live · hold OK = from the start", color = c.accentAlt, style = MaterialTheme.typography.labelSmall)
+                                }
+                                when {
+                                    isNow -> Text("LIVE", Modifier.background(c.live, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                    archived -> Icon(Icons.Filled.History, "From the archive", Modifier.size(18.dp), tint = c.accentAlt)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun startOfDay(ms: Long): Long = java.util.Calendar.getInstance().apply {
+    timeInMillis = ms
+    set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+private fun dayName(d: Int, dayStart: Long): String = when (d) {
+    0 -> "Today"
+    -1 -> "Yesterday"
+    1 -> "Tomorrow"
+    else -> java.text.SimpleDateFormat("EEE d", java.util.Locale.ENGLISH).format(java.util.Date(dayStart))
 }
 
 fun progressOf(p: ProgramEntity, now: Long = System.currentTimeMillis()): Float =
@@ -324,32 +414,21 @@ fun TvChannelRow(
         scaleOnFocus = 1.0f,
         focusRequester = focusRequester,
     ) { focused ->
-        Row(Modifier.height(58.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (showNumber) Text("${ch.num}", Modifier.width(40.dp), color = if (playing) c.accent else c.textMuted, style = MaterialTheme.typography.bodyMedium)
-            ChannelLogo(ch.logo, ch.name, 68.dp, 40.dp)
-            Spacer(Modifier.width(14.dp))
-            Row(Modifier.weight(1.15f), verticalAlignment = Alignment.CenterVertically) {
-                Text(name, color = c.text, style = MaterialTheme.typography.bodyLarge, fontWeight = if (playing || focused) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (playing) Icon(Icons.Filled.PlayArrow, null, Modifier.padding(start = 6.dp).size(18.dp), tint = c.accent)
-                if (favorite) Icon(Icons.Filled.Star, null, Modifier.padding(start = 6.dp).size(16.dp), tint = c.accentAlt)
-                if (ch.archive) Icon(Icons.Filled.History, "Archive", Modifier.padding(start = 6.dp).size(16.dp), tint = c.textMuted)
+        Row(Modifier.height(62.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            ChannelLogo(ch.logo, ch.name, 60.dp, 36.dp)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (showNumber) Text("${ch.num}  ", color = if (playing) c.accent else c.textMuted, style = MaterialTheme.typography.bodyMedium)
+                    Text(name, color = c.text, style = MaterialTheme.typography.bodyLarge, fontWeight = if (playing || focused) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (playing) Icon(Icons.Filled.PlayArrow, null, Modifier.padding(start = 4.dp).size(16.dp), tint = c.accent)
+                    if (favorite) Icon(Icons.Filled.Star, null, Modifier.padding(start = 4.dp).size(14.dp), tint = c.accentAlt)
+                    if (ch.archive) Icon(Icons.Filled.History, "Archive", Modifier.padding(start = 4.dp).size(14.dp), tint = c.accentAlt)
+                }
+                val p = nn?.now
+                Text(p?.title ?: "", color = c.textMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (p != null) ProgressLine(progressOf(p), Modifier.fillMaxWidth().padding(top = 4.dp), height = 3.dp)
             }
-            Spacer(Modifier.width(16.dp))
-            val p = nn?.now
-            Column(Modifier.weight(1.1f)) {
-                Text(p?.title ?: "", color = if (focused) c.text else c.text.copy(alpha = 0.9f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (p != null) ProgressLine(progressOf(p), Modifier.fillMaxWidth().padding(top = 6.dp), height = 3.dp)
-            }
-            Spacer(Modifier.width(16.dp))
-            val n = nn?.next
-            Text(
-                if (n != null) "${Fmt.time(n.start)}  ${n.title}" else "",
-                Modifier.weight(0.75f),
-                color = c.textMuted,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }

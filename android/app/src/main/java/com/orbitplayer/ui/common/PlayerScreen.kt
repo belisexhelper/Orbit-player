@@ -1,6 +1,11 @@
 package com.orbitplayer.ui.common
 
 import androidx.compose.material.icons.filled.LiveTv
+import com.orbitplayer.data.db.ProgramEntity
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.ui.focus.onFocusChanged
 import android.app.Activity
@@ -25,6 +30,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -124,7 +130,7 @@ import com.orbitplayer.ui.theme.Orbit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private enum class Overlay { None, Channels, Options }
+private enum class Overlay { None, Channels, Options, Panel }
 private enum class Picker { None, Audio, Subtitles, Aspect, Sleep, SubtitleUrl }
 
 /** Full-screen player for TV and phone */
@@ -187,6 +193,7 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
 
     // banner on every channel change
     LaunchedEffect(item, index) {
+        if (overlay == Overlay.Panel) overlay = Overlay.None
         if (item?.isLive == true || item?.kind == "catchup") {
             banner = true
             touch()
@@ -263,15 +270,16 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
                         onPrevious = { if (!pb.previousChannel()) { banner = true; touch() } },
                         onBanner = { banner = !banner; touch() },
                         onDigit = { d -> digits = (digits + d).take(4); touch() },
-                        onControls = { controls = true; touch() },
+                        onControls = { if (cur?.isCatchup == true) overlay = Overlay.Panel else controls = true; touch() },
+                        onPanel = { overlay = Overlay.Panel; banner = false; touch() },
                         onSeek = { ms ->
                             val step = if (cur?.isCatchup == true) 60_000L else 10_000L
                             pb.seekBy(if (ms < 0) -step else step)
                             seekNote = (if (ms < 0) "−" else "+") + if (cur?.isCatchup == true) "1 min" else "10 s"
-                            controls = true
+                            if (cur?.isCatchup == true) banner = true else controls = true
                             touch()
                         },
-                        onTogglePause = { pb.togglePause(); controls = true; touch() },
+                        onTogglePause = { pb.togglePause(); if (cur?.isCatchup == true) banner = true else controls = true; touch() },
                         onCommitDigits = { if (digits.isNotEmpty()) { commitNumber(vm, digits); digits = "" } },
                         hasDigits = digits.isNotEmpty(),
                         onRewindLive = {
@@ -360,7 +368,16 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
             }
         }
 
-        // Side channel list (OK on TV, "Channels" on phone)
+        // EON-style panel: OK on a live channel or catch-up
+        if (tv && overlay == Overlay.Panel && cur != null && cur.channel != null) {
+            LaunchedEffect(lastInput) {
+                delay(12_000)
+                if (overlay == Overlay.Panel) overlay = Overlay.None
+            }
+            TvLivePanel(vm, cur, nowNext, now, onTouch = ::touch, onClose = { overlay = Overlay.None })
+        }
+
+        // Side channel list (Left on TV, "Channels" on phone)
         AnimatedVisibility(
             overlay == Overlay.Channels,
             Modifier.align(Alignment.CenterStart),
@@ -479,6 +496,7 @@ private fun handleKey(
     onCommitDigits: () -> Unit,
     hasDigits: Boolean,
     onRewindLive: () -> Unit = {},
+    onPanel: () -> Unit = {},
 ): Boolean {
     if (!tv || item == null) return false
     val live = item.isLive
@@ -489,7 +507,7 @@ private fun handleKey(
         if (type == KeyEventType.KeyUp && repeat == 0) {
             when {
                 hasDigits -> onCommitDigits()
-                live -> onChannels()
+                live || item.isCatchup -> onPanel()
                 else -> onControls()
             }
         }
@@ -501,8 +519,8 @@ private fun handleKey(
         return true
     }
     when (code) {
-        AKeyEvent.KEYCODE_DPAD_UP, AKeyEvent.KEYCODE_CHANNEL_UP -> if (live) onZap(1) else onControls()
-        AKeyEvent.KEYCODE_DPAD_DOWN, AKeyEvent.KEYCODE_CHANNEL_DOWN -> if (live) onZap(-1) else onControls()
+        AKeyEvent.KEYCODE_DPAD_UP, AKeyEvent.KEYCODE_CHANNEL_UP -> if (live) onZap(1) else if (item.isCatchup) onPanel() else onControls()
+        AKeyEvent.KEYCODE_DPAD_DOWN, AKeyEvent.KEYCODE_CHANNEL_DOWN -> if (live) onZap(-1) else if (item.isCatchup) onPanel() else onControls()
         AKeyEvent.KEYCODE_DPAD_LEFT -> if (live) onChannels() else onSeek(-10_000)
         AKeyEvent.KEYCODE_DPAD_RIGHT -> if (live) onPrevious() else onSeek(10_000)
         AKeyEvent.KEYCODE_MEDIA_REWIND -> if (live) onRewindLive() else onSeek(-30_000)
@@ -598,6 +616,147 @@ private fun openExternal(context: Context, vm: AppViewModel, item: PlayItem) {
 
 // ---------------------------------------------------------------- overlays
 
+/**
+ * TV, OK on a live channel or a catch-up programme (EON style): what is on, a timeline, start over / −1 min /
+ * pause / +1 min / LIVE, and a strip of the channel's programmes: past ones (↺) play from the archive.
+ */
+@Composable
+private fun BoxScope.TvLivePanel(vm: AppViewModel, item: PlayItem, nn: NowNext?, now: Long, onTouch: () -> Unit, onClose: () -> Unit) {
+    val pb = vm.playback
+    val c = Orbit.colors
+    val ch = item.channel ?: return
+    val playing by pb.playing.collectAsState()
+    val catchup = item.isCatchup
+    val archive = ch.archive
+    val pauseFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(60)
+        runCatching { pauseFocus.requestFocus() }
+    }
+    // the programme being watched and where in it we are
+    val progStart = if (catchup) item.catchupStart else nn?.now?.start ?: 0L
+    val progStop = if (catchup) item.catchupEnd else nn?.now?.stop ?: 0L
+    val progTitle = if (catchup) item.subtitle else nn?.now?.title ?: ""
+    val at = if (catchup) item.catchupStart + pb.positionMs else now
+    val behind = if (catchup) ((now - at) / 60_000L).coerceAtLeast(0) else 0L
+
+    val days = if (archive) ch.archiveDays.coerceIn(1, 7) else 0
+    val programmes by produceState<List<ProgramEntity>>(emptyList(), ch.key) {
+        val t = System.currentTimeMillis()
+        value = vm.programs(ch, t - maxOf(days, 1) * 86_400_000L, t + 12 * 3_600_000L)
+    }
+    val stripState = rememberLazyListState()
+    LaunchedEffect(programmes.size) {
+        val i = programmes.indexOfFirst { it.start <= at && it.stop > at }
+        if (i >= 0) stripState.scrollToItem((i - 1).coerceAtLeast(0))
+    }
+    val channels = vm.groupChannels.value
+
+    Column(
+        Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6101521), Color(0xF7101521))))
+            .padding(start = 40.dp, end = 40.dp, top = 48.dp, bottom = 22.dp)
+            .onPreviewKeyEvent { onTouch(); false },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            ChannelLogo(ch.logo, ch.name, 84.dp, 48.dp)
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(progTitle.ifBlank { vm.displayName(ch) }, color = Color.White, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (catchup) Pill("ARCHIVE", c.accentAlt, filled = true) else Pill("LIVE", c.live, filled = true)
+                    EnginePill(vm)
+                }
+                Text(
+                    vm.displayName(ch) + (if (progStop > progStart) "  ·  ${Fmt.time(progStart)} – ${Fmt.time(progStop)}" else "") +
+                        (if (catchup) "  ·  $behind min behind live" else ""),
+                    color = c.textMuted, style = MaterialTheme.typography.bodyLarge, maxLines = 1,
+                )
+            }
+            Text(Fmt.time(now), color = Color.White, style = MaterialTheme.typography.headlineSmall)
+        }
+        // timeline of the programme
+        if (progStop > progStart) {
+            val frac = ((at - progStart).toFloat() / (progStop - progStart)).coerceIn(0f, 1f)
+            Box(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                // how far live is (catch-up): the rest of the bar is still in the future
+                if (catchup) ProgressLine(((now - progStart).toFloat() / (progStop - progStart)).coerceIn(0f, 1f), Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.25f), height = 5.dp)
+                ProgressLine(frac, Modifier.fillMaxWidth(), height = 5.dp)
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Text(Fmt.time(progStart), color = c.textMuted, style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.weight(1f))
+                Text(Fmt.time(at), color = Color.White, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text(Fmt.time(progStop), color = c.textMuted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (archive) IconAction(Icons.Filled.Replay, "Start over") {
+                if (catchup) pb.seekTo(0) else vm.startOver(ch)
+            }
+            IconAction(Icons.Filled.FastRewind, "−1 min") {
+                when {
+                    catchup -> pb.seekBy(-60_000)
+                    archive -> vm.rewindLive(ch, 60_000)
+                    else -> vm.toast("This channel has no archive")
+                }
+            }
+            IconAction(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (playing) "Pause" else "Play", focusRequester = pauseFocus) { pb.togglePause() }
+            IconAction(Icons.Filled.FastForward, "+1 min", tint = if (catchup) Orbit.colors.text else Orbit.colors.textMuted) {
+                if (catchup && behind >= 1) pb.seekBy(60_000) else vm.toast("You are watching live")
+            }
+            IconAction(Icons.Filled.LiveTv, "LIVE", active = !catchup) {
+                if (catchup) vm.playChannel(ch, channels) else onClose()
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        // programmes of the channel
+        if (programmes.isEmpty()) {
+            Text("No programme information for this channel", color = c.textMuted, style = MaterialTheme.typography.bodyMedium)
+        } else LazyRow(state = stripState, horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
+            items(programmes, key = { it.id * 31 + it.start }) { p ->
+                val isNow = p.start <= now && p.stop > now
+                val past = p.stop <= now
+                val archived = archive && p.start < now && p.start >= now - days * 86_400_000L
+                val watching = at >= p.start && at < p.stop
+                Focusable(
+                    onClick = {
+                        when {
+                            isNow && catchup -> vm.playChannel(ch, channels)
+                            isNow -> onClose()
+                            archived -> vm.playCatchup(ch, p)
+                            past -> vm.toast("This programme is no longer in the archive")
+                            else -> vm.toast("Starts ${Fmt.date(p.start)} at ${Fmt.time(p.start)}")
+                        }
+                    },
+                    onLongClick = { if (isNow && archived) vm.playCatchup(ch, p) },
+                    modifier = Modifier.width(220.dp),
+                    color = if (watching) c.accent.copy(alpha = 0.22f) else Color(0xCC1E2533),
+                    scaleOnFocus = 1.05f,
+                ) { f ->
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                (if (p.start < System.currentTimeMillis() - 86_400_000L || p.start >= System.currentTimeMillis() + 86_400_000L) Fmt.date(p.start) + "  " else "") + Fmt.time(p.start),
+                                Modifier.weight(1f), color = if (isNow) c.accent else c.textMuted, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+                            )
+                            when {
+                                isNow -> Text("LIVE", Modifier.background(c.live, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                archived -> Icon(Icons.Filled.History, "From the archive", Modifier.size(16.dp), tint = c.accentAlt)
+                            }
+                        }
+                        Text(p.title, color = if (!past && !isNow) c.textMuted else Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (f) FontWeight.SemiBold else FontWeight.Normal)
+                        if (isNow) ProgressLine(((now - p.start).toFloat() / (p.stop - p.start)).coerceIn(0f, 1f), Modifier.fillMaxWidth().padding(top = 5.dp), height = 3.dp)
+                    }
+                }
+            }
+        }
+        Text("◀ ▶ move  ·  OK play  ·  Back close", Modifier.padding(top = 6.dp), color = c.textMuted, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+
 /** Channel banner (TV): logo, number, name, now/next with progress */
 @Composable
 private fun InfoBanner(vm: AppViewModel, item: PlayItem, nn: NowNext?, quality: String, now: Long, favorites: Set<String>) {
@@ -638,7 +797,7 @@ private fun InfoBanner(vm: AppViewModel, item: PlayItem, nn: NowNext?, quality: 
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(Fmt.time(now), color = Color.White, style = MaterialTheme.typography.headlineSmall)
-                Text("OK  channels   ·   hold OK  options", color = c.textMuted, style = MaterialTheme.typography.labelMedium)
+                Text("OK  programmes  ·  ◀  channels  ·  hold OK  options", color = c.textMuted, style = MaterialTheme.typography.labelMedium)
             }
         }
     }
@@ -728,7 +887,7 @@ private fun OptionsBar(item: PlayItem, favorite: Boolean, aspect: String, engine
             IconAction(Icons.Filled.Bedtime, "Sleep") { onAction("sleep") }
             if (item.isLive) IconAction(if (favorite) Icons.Filled.Star else Icons.Filled.StarBorder, if (favorite) "Unfavorite" else "Favorite", active = favorite) { onAction("fav") }
             if (item.isLive && item.channel?.archive == true) IconAction(Icons.Filled.Replay, "Start over") { onAction("startover") }
-            if (item.isLive) IconAction(Icons.Filled.DateRange, "Catch-up") { onAction("guide") }
+            if (item.isLive) IconAction(Icons.Filled.DateRange, "TV guide") { onAction("guide") }
             IconAction(Icons.Filled.Refresh, "Reload") { onAction("retry") }
             IconAction(Icons.Filled.SwapHoriz, if (engine == "vlc") "Engine: VLC" else "Engine: Exo") { onAction("engine") }
             IconAction(Icons.Filled.OpenInNew, "Other player") { onAction("external") }

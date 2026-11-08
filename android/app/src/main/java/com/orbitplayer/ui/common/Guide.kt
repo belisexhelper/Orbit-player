@@ -146,7 +146,7 @@ fun GuideScreen(vm: AppViewModel) {
     Column(Modifier.weight(1f).fillMaxHeight().padding(start = if (tv) 14.dp else 0.dp, end = if (tv) 24.dp else 0.dp, top = if (tv) 18.dp else 0.dp)) {
         // header
         Row(Modifier.fillMaxWidth().padding(horizontal = if (tv) 0.dp else 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Catch-up", color = c.text, style = MaterialTheme.typography.headlineSmall)
+            Text("TV guide", color = c.text, style = MaterialTheme.typography.headlineSmall)
             Text(Fmt.date(windowStart + HALF_HOUR), color = c.textMuted, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             if (!tv) OrbitButton("Now") { windowStart = guideStart() }
         }

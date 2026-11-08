@@ -84,7 +84,7 @@ private data class RailItem(val route: Route, val label: String, val icon: Image
 private val RAIL = listOf(
     RailItem(Route.Search, "Search", Icons.Filled.Search),
     RailItem(Route.Live, "Live TV", Icons.Filled.LiveTv),
-    RailItem(Route.Guide, "Catch-up", Icons.Filled.History),
+    RailItem(Route.Guide, "TV guide", Icons.Filled.DateRange),
     RailItem(Route.Movies, "Movies", Icons.Filled.Movie),
     RailItem(Route.Series, "Series", Icons.Filled.VideoLibrary),
     RailItem(Route.Favorites, "My list", Icons.Filled.Star),

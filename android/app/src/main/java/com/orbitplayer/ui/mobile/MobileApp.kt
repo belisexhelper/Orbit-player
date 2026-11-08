@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Replay
+import com.orbitplayer.ui.components.Pill
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -111,7 +113,7 @@ private data class Tab(val route: Route, val label: String, val icon: ImageVecto
 private val TABS = listOf(
     Tab(Route.Home, "Home", Icons.Filled.Home),
     Tab(Route.Live, "Live", Icons.Filled.LiveTv),
-    Tab(Route.Guide, "Catch-up", Icons.Filled.History),
+    Tab(Route.Guide, "TV guide", Icons.Filled.DateRange),
     Tab(Route.Movies, "Movies", Icons.Filled.Movie),
     Tab(Route.Series, "Series", Icons.Filled.VideoLibrary),
 )
@@ -306,7 +308,7 @@ fun MobileHomeContent(
         item {
             val tiles: List<Triple<String, ImageVector, Pair<Route, String>>> = listOf(
                 Triple("Live TV", Icons.Filled.LiveTv, Route.Live to "${counts.first} channels"),
-                Triple("Catch-up", Icons.Filled.History, Route.Guide to "Guide & archive"),
+                Triple("TV guide", Icons.Filled.DateRange, Route.Guide to "All channels, day by day"),
                 Triple("Movies", Icons.Filled.Movie, Route.Movies to "${counts.second} titles"),
                 Triple("Series", Icons.Filled.VideoLibrary, Route.Series to "${counts.third} shows"),
             )
@@ -452,14 +454,18 @@ fun ChannelView(vm: AppViewModel, wide: Boolean, embedded: Boolean = false) {
     val queue by vm.playback.queue.collectAsState()
     val playerOpen by vm.playerOpen.collectAsState()
     val ch = item?.channel
-    var tab by remember { mutableStateOf(if (embedded || vm.channelViewGuide) 1 else 0) }
+    // programmes first (EON style: go back in time right from here), channels second
+    var tab by remember { mutableStateOf(1) }
     LaunchedEffect(Unit) { vm.channelViewGuide = false }
     val now = System.currentTimeMillis()
     val nn by produceState<NowNext?>(null, ch?.key) { value = ch?.let { vm.loadNowNext(listOf(it.epgKey))[it.epgKey] } }
-    val progs by produceState(emptyList<ProgramEntity>(), ch?.key) {
+    val today = remember { java.util.Calendar.getInstance().apply { set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0) }.timeInMillis }
+    val back = if (ch?.archive == true) ch.archiveDays.coerceIn(1, 7) else 0
+    var day by remember(ch?.key) { mutableStateOf(0) }
+    val dayStart = today + day * 86_400_000L
+    val progs by produceState(emptyList<ProgramEntity>(), ch?.key, day) {
         val cc = ch ?: return@produceState
-        val from = if (cc.archive) now - cc.archiveDays.coerceAtMost(7) * 86_400_000L else now - 3 * 3600_000L
-        value = vm.programs(cc, from, now + 24 * 3600_000L)
+        value = vm.programs(cc, dayStart, dayStart + 86_400_000L).filter { it.stop > dayStart && it.start < dayStart + 86_400_000L }
     }
     Column(Modifier.fillMaxSize()) {
         if (!embedded) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -477,18 +483,26 @@ fun ChannelView(vm: AppViewModel, wide: Boolean, embedded: Boolean = false) {
         if (ch != null) {
             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 ChannelLogo(ch.logo, ch.name, 64.dp, 40.dp)
+                val catchup = item?.isCatchup == true
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                    Text(vm.displayName(ch), color = c.text, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                    nn?.now?.let { p ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(vm.displayName(ch), color = c.text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        Spacer(Modifier.width(8.dp))
+                        if (catchup) Pill("ARCHIVE", c.accentAlt, filled = true) else Pill("LIVE", c.live, filled = true)
+                    }
+                    if (catchup) Text(item?.subtitle ?: "", color = c.textMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    else nn?.now?.let { p ->
                         Text("${Fmt.time(p.start)} – ${Fmt.time(p.stop)}  ${p.title}", color = c.textMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         ProgressLine(progressOf(p), Modifier.fillMaxWidth().padding(top = 4.dp))
                     }
                 }
+                if (catchup) IconAction(Icons.Filled.LiveTv, "Live") { vm.playChannel(ch, vm.groupChannels.value, fullscreen = false) }
+                else if (ch.archive) IconAction(Icons.Filled.Replay, "Start over") { vm.startOver(ch).invokeOnCompletion { vm.playerOpen.value = false } }
             }
         }
         Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OrbitButton("Programmes", primary = tab == 1) { tab = 1 }
             if (!embedded) OrbitButton("Channels", primary = tab == 0) { tab = 0 }
-            OrbitButton("TV guide", primary = tab == 1) { tab = 1 }
         }
         Spacer(Modifier.height(6.dp))
         if (tab == 0 && !embedded) {
@@ -500,27 +514,50 @@ fun ChannelView(vm: AppViewModel, wide: Boolean, embedded: Boolean = false) {
                 }
             }
         } else if (ch != null) {
-            if (progs.isEmpty()) EmptyState("No TV guide", "This channel has no programme information.")
-            val start = progs.indexOfFirst { it.stop > now }.coerceAtLeast(0)
-            val st = rememberLazyListState(start)
+            // days: as far back as the archive goes … tomorrow
+            val dayRow = rememberLazyListState((back - 2).coerceAtLeast(0))
+            LazyRow(state = dayRow, horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
+                items((-back..1).toList()) { d ->
+                    val label = when (d) {
+                        0 -> "Today"; -1 -> "Yesterday"; 1 -> "Tomorrow"
+                        else -> java.text.SimpleDateFormat("EEE d", java.util.Locale.ENGLISH).format(java.util.Date(today + d * 86_400_000L))
+                    }
+                    Focusable(onClick = { day = d }, shape = RoundedCornerShape(16.dp), color = if (d == day) c.accent else c.surface) { _ ->
+                        Text(label, Modifier.padding(horizontal = 14.dp, vertical = 7.dp), color = if (d == day) c.onAccent else c.text, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+            if (progs.isEmpty()) EmptyState("No TV guide", "No programme information for this day.")
+            val start = if (day == 0) (progs.indexOfFirst { it.stop > now } - 1).coerceAtLeast(0) else 0
+            val st = remember(ch.key, day, progs.size) { androidx.compose.foundation.lazy.LazyListState(start) }
             LazyColumn(state = st, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp)) {
-                items(progs, key = { it.id }) { p ->
+                items(progs, key = { it.id * 31 + it.start }) { p ->
                     val past = p.stop <= now
                     val isNow = p.start <= now && p.stop > now
+                    val archived = ch.archive && p.start < now && p.start >= now - back * 86_400_000L
                     ListRow(
                         "${Fmt.time(p.start)}  ${p.title}",
                         subtitle = when {
+                            isNow && ch.archive -> "On now · tap to watch live, hold to start over"
                             isNow -> "On now"
-                            past && ch.archive -> "Watch from archive"
-                            else -> Fmt.date(p.start)
+                            archived -> "Watch from the archive"
+                            past -> "No longer in the archive"
+                            else -> "Upcoming"
                         },
                         selected = isNow,
-                        trailing = { if (past && ch.archive) Icon(Icons.Filled.History, null, tint = c.accentAlt) },
+                        onLongClick = if (isNow && ch.archive) ({ vm.playCatchup(ch, p); vm.playerOpen.value = false }) else null,
+                        trailing = {
+                            when {
+                                isNow -> Pill("LIVE", c.live, filled = true)
+                                archived -> Icon(Icons.Filled.History, "From the archive", tint = c.accentAlt)
+                            }
+                        },
                     ) {
                         when {
-                            isNow -> vm.playerOpen.value = true
-                            past && ch.archive -> vm.playCatchup(ch, p)
-                            else -> vm.toast(p.description.ifBlank { "Starts at ${Fmt.time(p.start)}" }.take(200))
+                            isNow -> if (item?.isCatchup == true || item?.channel?.key != ch.key) vm.playChannel(ch, vm.groupChannels.value, fullscreen = false) else vm.playerOpen.value = true
+                            archived -> { vm.playCatchup(ch, p); vm.playerOpen.value = false }
+                            past -> vm.toast("This programme is no longer in the archive")
+                            else -> vm.toast(p.description.ifBlank { "Starts ${Fmt.date(p.start)} at ${Fmt.time(p.start)}" }.take(200))
                         }
                     }
                 }

@@ -124,7 +124,7 @@ fun SettingsScreen(vm: AppViewModel) {
         Row(Modifier.fillMaxSize().padding(start = 20.dp, end = 24.dp, top = 18.dp)) {
             Column(Modifier.width(280.dp).fillMaxHeight()) {
                 Text("Settings", Modifier.padding(start = 14.dp, bottom = 10.dp), color = c.text, style = MaterialTheme.typography.headlineSmall)
-                LazyColumn(Modifier.focusProperties { enter = { first } }.focusGroup()) {
+                LazyColumn(Modifier.focusProperties { enter = { d -> if (d == FocusDirection.Enter) FocusRequester.Default else first } }.focusGroup()) {
                     items(sections, key = { it.id }) { s ->
                         ListRow(
                             s.title,

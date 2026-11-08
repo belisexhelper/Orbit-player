@@ -7,6 +7,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -33,10 +34,15 @@ class ListFocus {
 @Composable
 fun rememberListFocus(): ListFocus = remember { ListFocus() }
 
-/** For the list itself: entering it lands on the remembered item when that item is on screen */
+/**
+ * For the list itself: moving into it with the arrows lands on the remembered item (when on screen).
+ * Focus requested by the app for a specific row (e.g. the playing channel) is left alone.
+ */
 @OptIn(ExperimentalComposeUiApi::class)
 fun Modifier.restoreListFocus(lf: ListFocus): Modifier =
-    this.focusProperties { enter = { if (lf.attachedKey != null) lf.requester else FocusRequester.Default } }.focusGroup()
+    this.focusProperties {
+        enter = { d -> if (d != FocusDirection.Enter && lf.attachedKey != null) lf.requester else FocusRequester.Default }
+    }.focusGroup()
 
 /** For each item: remembers focus; the [isTarget] item receives focus when the list is entered */
 @Composable

@@ -172,10 +172,25 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
         _state.value = State.Idle
     }
 
+    /** Whether Android currently lets this app install updates ("Install unknown apps") */
+    fun installAllowed(context: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
+
+    /** Opens the Android screen where installing apps from Orbit Player is allowed */
+    fun openInstallPermission(activity: Context) {
+        try {
+            activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}")))
+        } catch (_: Throwable) {
+            try {
+                activity.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
     /** True when Android lets this app install APKs; otherwise opens the screen to allow it */
     fun canInstall(activity: Context): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
-        if (activity.packageManager.canRequestPackageInstalls()) return true
+        if (installAllowed(activity)) return true
         try {
             activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}")))
         } catch (_: ActivityNotFoundException) {

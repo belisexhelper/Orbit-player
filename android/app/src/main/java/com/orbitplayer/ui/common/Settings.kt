@@ -1,5 +1,8 @@
 package com.orbitplayer.ui.common
 
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.History
 import com.orbitplayer.ui.components.OrbitButton
 import com.orbitplayer.ui.components.ProgressLine
@@ -332,6 +335,23 @@ private fun UpdateCard(vm: AppViewModel) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("Installed: ${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}", color = c.text, style = MaterialTheme.typography.titleMedium)
+        // the only permission the app needs: installing its own updates. Checked again when coming back from Android settings.
+        var allowed by remember { mutableStateOf(updater.installAllowed(context)) }
+        val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+        androidx.compose.runtime.DisposableEffect(lifecycle) {
+            val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) allowed = updater.installAllowed(context) }
+            lifecycle.addObserver(obs)
+            onDispose { lifecycle.removeObserver(obs) }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(if (allowed) Icons.Filled.CheckCircle else Icons.Filled.Warning, null, tint = if (allowed) c.success else c.accentAlt)
+            Text(
+                if (allowed) "Permission to install updates: allowed" else "Permission to install updates: not allowed yet",
+                color = c.text, modifier = Modifier.weight(1f),
+            )
+            if (!allowed) OrbitButton("Allow", icon = Icons.Filled.Security) { updater.openInstallPermission(context) }
+        }
+        if (!allowed) Text("Press Allow, switch on “Allow from this source” for Orbit Player, then come back with Back.", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
         when (val st = state) {
             Updater.State.Idle -> Text("Updates come directly from the Orbit Player releases on GitHub.", color = c.textMuted)
             Updater.State.Checking -> Text("Checking for updates…", color = c.textMuted)

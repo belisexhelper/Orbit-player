@@ -139,8 +139,8 @@ object LogoFinder {
                         if (header == null) { header = f; continue }
                         val h = header!!
                         fun col(n: String) = h.indexOf(n).let { i -> if (i in f.indices) f[i] else "" }
-                        val id = col("id").ifBlank { continue }
-                        if (col("closed").isNotBlank()) continue
+                        val id = col("id")
+                        if (id.isBlank() || col("closed").isNotBlank()) continue
                         val country = col("country")
                         byId[id.lowercase()] = id
                         val names = listOf(col("name")) + col("alt_names").split(';')

@@ -308,6 +308,9 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                     if (railOpen) Text("  Orbit Player", color = Orbit.colors.text, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 }
             }
+            // the menu's focus target must always exist (screens without their own item, e.g. Add playlist:
+            // Live TV), else returning focus to the app (keyboard closed) or Left would crash
+            val railTarget = RAIL.firstOrNull { it.route == section } ?: RAIL.firstOrNull { it.route == Route.Live } ?: RAIL.first()
             RAIL.forEach { item ->
                 val active = item.route == section
                 Focusable(
@@ -319,7 +322,7 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                     color = Color.Transparent,
                     selected = active,
                     scaleOnFocus = 1f,
-                    focusRequester = if (active) railFocus else null,
+                    focusRequester = if (item === railTarget) railFocus else null,
                 ) { focused ->
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(item.icon, item.label, Modifier.size(24.dp), tint = if (active || focused) Orbit.colors.accent else Orbit.colors.textMuted)

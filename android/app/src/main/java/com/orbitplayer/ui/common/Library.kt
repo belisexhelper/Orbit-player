@@ -149,7 +149,8 @@ data class PosterData(val key: String, val title: String, val image: String, val
 @Composable
 fun PosterRow(items: List<PosterData>) {
     val tv = LocalIsTv.current
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(if (tv) 16.dp else 10.dp), contentPadding = PaddingValues(vertical = 6.dp)) {
+    // room around the posters so the enlarged, outlined focused poster is not cut off
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(if (tv) 18.dp else 10.dp), contentPadding = if (tv) PaddingValues(horizontal = 10.dp, vertical = 14.dp) else PaddingValues(vertical = 6.dp)) {
         items(items, key = { it.key }) { p ->
             PosterCard(p.title, p.image, Modifier.width(if (tv) 140.dp else 108.dp), subtitle = p.subtitle, progress = p.progress) { p.onClick() }
         }

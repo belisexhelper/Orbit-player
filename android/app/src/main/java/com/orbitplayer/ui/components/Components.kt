@@ -103,12 +103,16 @@ fun Focusable(
     val press = remember { BooleanArray(2) } // [0] = OK is down, [1] = long press fired
     val scale by animateFloatAsState(if (focused && tv) scaleOnFocus else 1f, tween(120), label = "focus-scale")
     val accent = Orbit.colors.accent
-    var m = modifier
+    val own = remember { FocusRequester() }
+    var m = modifier.focusRequester(own)
     if (focusRequester != null) m = m.focusRequester(focusRequester)
     m = m
         .onFocusChanged {
             focused = it.isFocused
-            if (it.isFocused) onFocus?.invoke()
+            if (it.isFocused) {
+                FocusMemory.last = own
+                onFocus?.invoke()
+            }
         }
         .onPreviewKeyEvent { e ->
             if (!isOkKey(e.key)) return@onPreviewKeyEvent false
@@ -381,4 +385,9 @@ fun EmptyState(title: String, text: String = "", modifier: Modifier = Modifier, 
             action()
         }
     }
+}
+
+/** The element that had focus last (TV): used to come back to it after the full-screen player */
+object FocusMemory {
+    var last: FocusRequester? = null
 }

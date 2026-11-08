@@ -98,7 +98,9 @@ fun VodBrowseScreen(vm: AppViewModel, series: Boolean) {
     val c = Orbit.colors
     val playlists by vm.playlists.collectAsState()
     if (playlists?.isEmpty() == true) return NoPlaylist(vm)
-    var cat by remember(series) { mutableStateOf(CAT_ALL) }
+    // TV: coming back from a movie/series page restores the category, the scroll and the focused poster
+    val saved = remember(series) { vm.vodBrowseState[series] }
+    var cat by remember(series) { mutableStateOf(saved?.first ?: CAT_ALL) }
     val cats by remember(series) { if (series) vm.seriesCategories() else vm.vodCategories() }.collectAsState(emptyList())
     val favorites by vm.favorites.collectAsState()
     val progress by vm.allProgress.collectAsState()
@@ -114,9 +116,17 @@ fun VodBrowseScreen(vm: AppViewModel, series: Boolean) {
     }
     val searching = debounced.isNotEmpty()
     var sortDialog by remember { mutableStateOf(false) }
-    val gridFocus = rememberListFocus()
+    val gridFocus = remember(series) { com.orbitplayer.ui.components.ListFocus().apply { focusedKey = saved?.second } }
     val catFocus = rememberListFocus()
-    val gridState = remember(series, cat, debounced, sort) { LazyGridState() }
+    val gridState = remember(series, cat, debounced, sort) {
+        LazyGridState(if (saved != null && cat == saved.first && debounced.isEmpty()) saved.third else 0)
+    }
+    val latestGrid = androidx.compose.runtime.rememberUpdatedState(gridState)
+    val latestCat = androidx.compose.runtime.rememberUpdatedState(cat)
+    androidx.compose.runtime.DisposableEffect(series) {
+        onDispose { vm.vodBrowseState[series] = Triple(latestCat.value, gridFocus.focusedKey, latestGrid.value.firstVisibleItemIndex) }
+    }
+    if (tv) com.orbitplayer.ui.tv.TvEntryPoint(if (gridFocus.focusedKey != null) gridFocus.requester else catFocus.requester)
     val catState = rememberLazyListState()
     val searchFocus = remember { FocusRequester() }
     val queryCat = if (cat == CAT_FAV || cat == CAT_CONTINUE) CAT_ALL else cat

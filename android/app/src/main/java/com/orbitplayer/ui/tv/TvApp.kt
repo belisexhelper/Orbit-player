@@ -40,6 +40,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.runtime.DisposableEffect
@@ -133,20 +135,51 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
         runCatching { contentFocus.requestFocus() }
     }
 
-    // Back: inner screens → their section; in a section → the menu → exit. (A screen can take one
-    // step itself first, e.g. Catch-up: programmes → groups.) Each step works even when focus could
-    // not be moved (the next Back goes on), so Back can never get stuck.
-    var backToMenuTried by remember { mutableStateOf(false) }
-    LaunchedEffect(railFocused, route) { if (!railFocused) backToMenuTried = false }
+    // Back works like pressing Left: one step to the left each time (programmes → channels → groups),
+    // then the menu, then the exit question. Detail pages (a movie, a series) go back to their list.
+    val focusManager = LocalFocusManager.current
+    var enterRequest by remember { mutableIntStateOf(0) }
+    var stuckBacks by remember { mutableIntStateOf(0) }
+    LaunchedEffect(railFocused) { if (!railFocused) stuckBacks = 0 }
     BackHandler(enabled = !playerOpen) {
         when {
-            vm.backStack.size > 2 -> vm.back()
-            !railFocused && !backToMenuTried -> {
-                backToMenuTried = true
-                runCatching { railFocus.requestFocus() }
+            vm.backStack.size > 2 -> {
+                vm.back()
+                enterRequest++
             }
-            settings.confirmExit -> askExit = true
-            else -> onExit()
+            railFocused -> if (settings.confirmExit) askExit = true else onExit()
+            else -> {
+                val moved = runCatching { focusManager.moveFocus(FocusDirection.Left) }.getOrDefault(false)
+                if (!moved) {
+                    stuckBacks++
+                    if (stuckBacks >= 2) { if (settings.confirmExit) askExit = true else onExit() }
+                    else runCatching { railFocus.requestFocus() }
+                }
+            }
+        }
+    }
+    // after choosing a menu item or going back from a detail page: focus goes into the screen
+    LaunchedEffect(enterRequest) {
+        if (enterRequest == 0) return@LaunchedEffect
+        delay(120)
+        repeat(4) {
+            enterContent()
+            delay(120)
+            if (!railFocused) return@LaunchedEffect
+        }
+    }
+    // after the full-screen player: back to the element that was focused before it opened
+    var beforePlayer by remember { mutableStateOf<FocusRequester?>(null) }
+    LaunchedEffect(playerOpen) {
+        if (playerOpen) {
+            beforePlayer = com.orbitplayer.ui.components.FocusMemory.last
+            return@LaunchedEffect
+        }
+        val target = beforePlayer ?: return@LaunchedEffect
+        beforePlayer = null
+        repeat(5) {
+            delay(80)
+            if (runCatching { target.requestFocus() }.isSuccess) return@LaunchedEffect
         }
     }
 
@@ -229,7 +262,8 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                 val active = item.route == section
                 Focusable(
                     onClick = {
-                        if (item.route == section) enterContent() else vm.root(item.route)
+                        if (item.route != section) vm.root(item.route)
+                        enterRequest++
                     },
                     modifier = Modifier.fillMaxWidth(),
                     color = Color.Transparent,

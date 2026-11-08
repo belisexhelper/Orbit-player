@@ -348,10 +348,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val item = playback.item.value
         when {
             item?.isLive != true -> closePlayer(stop = true)
-            tv -> {
-                if (route != Route.Live) root(Route.Live)
-                closePlayer(stop = !settings.value.livePreview)
-            }
+            // TV: back to the screen the channel was started from (Live TV, Catch-up, Search…)
+            tv -> closePlayer(stop = !settings.value.livePreview)
             wideLayout -> {
                 // tablet / phone in landscape: the Live screen shows the mini player next to the list
                 closePlayer(stop = false)
@@ -363,6 +361,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    /** TV movies/series screens: chosen category and the focused poster, kept while visiting details */
+    val vodBrowseState = HashMap<Boolean, Triple<String, Any?, Int>>()
 
     /** Phone/tablet: true when the wide layout (list + mini player side by side) is shown */
     var wideLayout = false

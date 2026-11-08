@@ -139,16 +139,7 @@ fun GuideScreen(vm: AppViewModel) {
             }
         }
     }
-    var gridHasFocus by remember { mutableStateOf(false) }
-    var gridBackTried by remember { mutableStateOf(false) }
-    LaunchedEffect(gridHasFocus) { gridBackTried = false }
-    // TV: Back from the programmes goes to the groups first (then the menu, then exit).
-    // If focus can't move, the next Back is left to the menu/exit handling.
-    androidx.activity.compose.BackHandler(enabled = tv && gridHasFocus && !gridBackTried) {
-        gridBackTried = true
-        runCatching { groupFocus.requester.requestFocus() }
-    }
-    Column(Modifier.weight(1f).fillMaxHeight().padding(start = if (tv) 14.dp else 0.dp, end = if (tv) 24.dp else 0.dp, top = if (tv) 18.dp else 0.dp).onFocusChanged { gridHasFocus = it.hasFocus }) {
+    Column(Modifier.weight(1f).fillMaxHeight().padding(start = if (tv) 14.dp else 0.dp, end = if (tv) 24.dp else 0.dp, top = if (tv) 18.dp else 0.dp)) {
         // header
         Row(Modifier.fillMaxWidth().padding(horizontal = if (tv) 0.dp else 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Catch-up", color = c.text, style = MaterialTheme.typography.headlineSmall)

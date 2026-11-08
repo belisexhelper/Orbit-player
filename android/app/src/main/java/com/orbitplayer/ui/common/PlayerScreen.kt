@@ -221,7 +221,7 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .focusProperties { exit = { FocusRequester.Cancel } }
+            .focusProperties { exit = { d -> com.orbitplayer.ui.components.arrowExit(d) } }
             .focusGroup(),
     ) {
         PlayerSurface(pb, settings, aspect, Modifier.fillMaxSize())

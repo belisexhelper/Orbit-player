@@ -151,7 +151,7 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                 Modifier.weight(1f).fillMaxHeight()
                     .focusRequester(contentFocus)
                     .onFocusChanged { if (it.hasFocus) entry.visited = route }
-                    .focusProperties { exit = { d -> if (d == FocusDirection.Left) railFocus else FocusRequester.Cancel } }
+                    .focusProperties { exit = { d -> com.orbitplayer.ui.components.arrowExit(d, left = railFocus) } }
                     .focusRestorer()
                     .focusGroup(),
             ) {
@@ -192,8 +192,8 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                     } else false
                 }
                 .focusProperties {
-                    enter = { railFocus }
-                    exit = { FocusRequester.Cancel }
+                    enter = { d -> if (d == FocusDirection.Enter) FocusRequester.Default else railFocus }
+                    exit = { d -> com.orbitplayer.ui.components.arrowExit(d) }
                 }
                 .focusGroup()
                 .padding(vertical = 28.dp, horizontal = 12.dp),

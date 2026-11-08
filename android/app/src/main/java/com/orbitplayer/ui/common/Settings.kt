@@ -134,7 +134,7 @@ fun SettingsScreen(vm: AppViewModel) {
             Spacer(Modifier.width(20.dp))
             Box(
                 Modifier.weight(1f).fillMaxHeight()
-                    .focusProperties { exit = { d -> if (d == FocusDirection.Left) first else FocusRequester.Cancel } }
+                    .focusProperties { exit = { d -> com.orbitplayer.ui.components.arrowExit(d, left = first) } }
                     .focusRestorer()
                     .focusGroup(),
             ) { SectionContent(vm, current) }

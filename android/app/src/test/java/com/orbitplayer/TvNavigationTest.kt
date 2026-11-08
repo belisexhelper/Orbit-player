@@ -34,6 +34,7 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], application = App::class, qualifiers = "w960dp-h540dp-land-xhdpi")
+@OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
 class TvNavigationTest {
     @get:Rule val compose = createComposeRule()
 

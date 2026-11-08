@@ -61,6 +61,17 @@ import coil.compose.AsyncImage
 import com.orbitplayer.ui.theme.LocalIsTv
 import com.orbitplayer.ui.theme.Orbit
 
+/**
+ * For focusProperties { exit = ... }: blocks only the arrow keys. Other directions (focus requested
+ * from code, Back to the menu, dialogs) must pass, otherwise focus gets stuck.
+ */
+fun arrowExit(d: androidx.compose.ui.focus.FocusDirection, left: FocusRequester? = null, right: FocusRequester? = null): FocusRequester = when (d) {
+    androidx.compose.ui.focus.FocusDirection.Left -> left ?: FocusRequester.Cancel
+    androidx.compose.ui.focus.FocusDirection.Right -> right ?: FocusRequester.Cancel
+    androidx.compose.ui.focus.FocusDirection.Up, androidx.compose.ui.focus.FocusDirection.Down -> FocusRequester.Cancel
+    else -> FocusRequester.Default
+}
+
 /** OK / Enter / D-pad center */
 fun isOkKey(key: Key) = key == Key.DirectionCenter || key == Key.Enter || key == Key.NumPadEnter
 

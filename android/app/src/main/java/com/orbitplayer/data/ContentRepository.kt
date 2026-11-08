@@ -406,6 +406,7 @@ class ContentRepository(private val context: Context, val db: AppDatabase, priva
                 db.epg().clear(id)
                 for (b in batches) db.epg().insert(b)
             }
+            archiveLoaded.clear()
             db.epg().deleteOld(now - (pastDays + 1) * 86_400_000L)
             db.playlists().markEpg(id, System.currentTimeMillis())
             // channel logos from the guide (used for channels without a working logo)
@@ -414,6 +415,44 @@ class ContentRepository(private val context: Context, val db: AppDatabase, priva
         } catch (e: Exception) {
             AppLog.w("TV guide for ${p.name} failed", e)
             status(id, SyncStatus(error = "TV guide: ${e.message}"))
+        }
+    }
+
+    /** channel key → when its archive guide was loaded (it is loaded again after a while or after a guide refresh) */
+    private val archiveLoaded = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val archiveLock = kotlinx.coroutines.sync.Semaphore(2)
+
+    /**
+     * Xtream channels with an archive: adds the programmes the XMLTV file leaves out (often everything older
+     * than a day) from the channel's own guide on the server, so catch-up shows every day still in the archive.
+     */
+    suspend fun fillArchiveGuide(ch: ChannelEntity) = withContext(Dispatchers.IO) {
+        if (!ch.archive || ch.epgKey.isBlank()) return@withContext
+        val last = archiveLoaded[ch.key]
+        if (last != null && System.currentTimeMillis() - last < 30 * 60_000L) return@withContext
+        archiveLock.acquire()
+        try {
+            if (archiveLoaded[ch.key]?.let { System.currentTimeMillis() - it < 30 * 60_000L } == true) return@withContext
+            val p = db.playlists().get(ch.playlistId) ?: return@withContext
+            if (p.type != "xtream") { archiveLoaded[ch.key] = System.currentTimeMillis(); return@withContext }
+            val list = runCatching { xtream(p).channelGuide(ch.streamId) }.getOrElse {
+                AppLog.w("Archive guide for ${ch.name} failed: ${it.message}")
+                archiveLoaded[ch.key] = System.currentTimeMillis() - 25 * 60_000L // try again in a few minutes
+                return@withContext
+            }
+            archiveLoaded[ch.key] = System.currentTimeMillis()
+            if (list.isEmpty()) return@withContext
+            val from = list.minOf { it[0] as Long }
+            val to = list.maxOf { it[1] as Long }
+            val existing = db.epg().programs(ch.epgKey, from, to)
+            // only what the guide doesn't have yet (no overlapping programme)
+            val add = list.filter { a ->
+                val s = a[0] as Long; val e = a[1] as Long
+                existing.none { it.start < e && it.stop > s }
+            }.map { a -> ProgramEntity(epgKey = ch.epgKey, playlistId = ch.playlistId, start = a[0] as Long, stop = a[1] as Long, title = a[2] as String, description = a[3] as String) }
+            if (add.isNotEmpty()) db.epg().insert(add)
+        } finally {
+            archiveLock.release()
         }
     }
 

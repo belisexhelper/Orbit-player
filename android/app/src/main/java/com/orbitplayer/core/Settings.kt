@@ -37,7 +37,7 @@ data class AppSettings(
     // Data
     val playlistRefreshHours: Int = 24,
     val epgRefreshHours: Int = 12,
-    val epgPastDays: Int = 3,
+    val epgPastDays: Int = 7,
     // Startup
     val startOnLastChannel: Boolean = false,
     val autostartOnBoot: Boolean = false,

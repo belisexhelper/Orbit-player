@@ -228,8 +228,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         out
     }
 
-    suspend fun programs(ch: ChannelEntity, from: Long, to: Long): List<ProgramEntity> =
-        if (ch.epgKey.isBlank()) emptyList() else withContext(Dispatchers.IO) { app.db.epg().programs(ch.epgKey, from, to) }
+    suspend fun programs(ch: ChannelEntity, from: Long, to: Long): List<ProgramEntity> {
+        if (ch.epgKey.isBlank()) return emptyList()
+        if (ch.archive && from < System.currentTimeMillis() - 6 * 3600_000L) {
+            kotlinx.coroutines.withTimeoutOrNull(6_000) { runCatching { repo.fillArchiveGuide(ch) } }
+        }
+        return withContext(Dispatchers.IO) { app.db.epg().programs(ch.epgKey, from, to) }
+    }
 
     // ---------- playback ----------
     fun liveItem(ch: ChannelEntity) = PlayItem(kind = "live", title = displayName(ch), channel = ch, poster = ch.logo, playlistId = ch.playlistId)

@@ -301,7 +301,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         lastForceHls = forceHls
         if (chosenEngine() == "vlc") {
             built?.stop()
-            if (vlc.prepare(url, startMs, extraSubs, settings.hardwareDecoding, settings.bufferMs.coerceAtMost(10_000))) {
+            if (vlc.prepare(url, startMs, extraSubs, settings.hardwareDecoding, settings.bufferMs.coerceAtMost(10_000), vod = _item.value?.let { !it.isLive && !it.isCatchup } == true)) {
                 _engine.value = "vlc"
                 return
             }

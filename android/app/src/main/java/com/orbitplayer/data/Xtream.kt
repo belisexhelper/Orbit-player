@@ -65,6 +65,25 @@ class XtreamClient(server: String, private val username: String, private val pas
     fun xmltvUrl(): String = "$server/xmltv.php?username=$u&password=$p"
 
     /**
+     * Full guide of one channel (also the days still in the archive, which the XMLTV file often leaves out).
+     * Titles and descriptions come base64 encoded. Returns (start, stop, title, description).
+     */
+    fun channelGuide(streamId: String): List<Array<Any>> {
+        val json = JSONObject(Net.getString(Net.iptv, api("get_simple_data_table", "&stream_id=${enc(streamId)}")))
+        val arr = json.optJSONArray("epg_listings") ?: return emptyList()
+        val out = ArrayList<Array<Any>>(arr.length())
+        fun b64(s: String): String = runCatching { String(android.util.Base64.decode(s, android.util.Base64.DEFAULT), Charsets.UTF_8) }.getOrDefault(s)
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val start = o.optString("start_timestamp").toLongOrNull()?.times(1000) ?: continue
+            val stop = (o.optString("stop_timestamp").toLongOrNull() ?: o.optString("end_timestamp").toLongOrNull())?.times(1000) ?: continue
+            if (stop <= start) continue
+            out += arrayOf(start, stop, b64(o.optString("title")).trim(), b64(o.optString("description")).trim())
+        }
+        return out
+    }
+
+    /**
      * Snimak iz arhive (catch-up). Xtream očekuje početak u vremenskoj zoni servera.
      */
     fun timeshiftUrl(streamId: String, startMs: Long, durationMin: Int, serverTz: String): String {

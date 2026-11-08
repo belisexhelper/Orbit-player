@@ -36,15 +36,21 @@ class VlcEngine(private val context: Context, private val events: Events) {
     private fun ensure(): MediaPlayer? {
         mp?.let { return it }
         return try {
+            val tv = com.orbitplayer.core.DeviceInfo.isTv(context)
             val l = LibVLC(context, arrayListOf(
                 "--http-reconnect",
                 "--audio-time-stretch",
                 "--no-stats",
-                // full-quality picture (the default 16-bit output shows banding and looks blurry)
-                "--android-display-chroma=RV32",
-                "--avcodec-skiploopfilter=0",
                 "--avcodec-hw=any",
                 "--avcodec-threads=0",
+                // TV: full-quality picture (16-bit output shows banding on a big screen).
+                // Phone: like the VLC app (skip the deblocking filter on non-reference frames), so software
+                // decoding of HD series doesn't stutter; on a small screen it looks the same.
+                "--android-display-chroma=RV32",
+                "--avcodec-skiploopfilter=${if (tv) 0 else 1}",
+                "--avcodec-hurry-up",
+                "--drop-late-frames",
+                "--skip-frames",
                 "-v",
             ))
             val p = MediaPlayer(l)
@@ -73,12 +79,13 @@ class VlcEngine(private val context: Context, private val events: Events) {
         }
     }
 
-    fun prepare(url: String, startMs: Long, subtitles: List<SubtitleSource>, hardware: Boolean, cachingMs: Int): Boolean {
+    fun prepare(url: String, startMs: Long, subtitles: List<SubtitleSource>, hardware: Boolean, cachingMs: Int, vod: Boolean = false): Boolean {
         val p = ensure() ?: return false
         val l = lib ?: return false
         val media = Media(l, Uri.parse(url))
         media.setHWDecoderEnabled(hardware, false)
-        media.addOption(":network-caching=${cachingMs.coerceIn(1500, 20_000)}")
+        // movies and episodes: at least 5 s of buffer, so a slow moment of the server doesn't freeze the picture
+        media.addOption(":network-caching=${(if (vod) maxOf(cachingMs, 5000) else cachingMs).coerceIn(1500, 20_000)}")
         media.addOption(":file-caching=3000")
         media.addOption(":http-user-agent=${Net.USER_AGENT}")
         if (startMs > 0) media.addOption(":start-time=${startMs / 1000.0}")
@@ -119,7 +126,11 @@ class VlcEngine(private val context: Context, private val events: Events) {
         attached = layout
     }
 
+    private var scale: String? = null
+
     fun setScale(aspect: String) {
+        if (scale == aspect && attached != null) return
+        scale = aspect
         mp?.setVideoScale(when (aspect) {
             "fill" -> MediaPlayer.ScaleType.SURFACE_FILL
             "zoom" -> MediaPlayer.ScaleType.SURFACE_FIT_SCREEN

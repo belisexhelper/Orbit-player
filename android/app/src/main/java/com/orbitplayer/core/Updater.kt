@@ -62,6 +62,25 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
 
     val currentBuild: Int get() = BuildConfig.VERSION_CODE
 
+    /** GitHub sometimes answers 502/503/504 or drops the connection for a moment: try up to 3 times */
+    private class Temporary(msg: String) : Exception(msg)
+
+    private suspend fun <T> retrying(block: () -> T): T {
+        var wait = 2_000L
+        repeat(2) {
+            try {
+                return block()
+            } catch (t: Temporary) {
+                AppLog.w("update: ${t.message}, trying again")
+            } catch (t: java.io.IOException) {
+                AppLog.w("update: ${t.message}, trying again")
+            }
+            kotlinx.coroutines.delay(wait)
+            wait *= 2
+        }
+        return block()
+    }
+
     /** Asks GitHub for the newest build. Returns it when it is newer than the installed one. */
     suspend fun check(): Release? = withContext(Dispatchers.IO) {
         if (_state.value is State.Downloading) return@withContext null
@@ -71,13 +90,16 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                 .header("Accept", "application/vnd.github+json")
                 .header("User-Agent", "OrbitPlayer-Updater")
                 .build()
-            val body = client.newCall(req).execute().use { r ->
-                when {
-                    r.code == 404 -> error("No published build yet")
-                    r.code == 403 -> error("GitHub is busy, try again in a few minutes")
-                    !r.isSuccessful -> error("GitHub answered HTTP ${r.code}")
+            val body = retrying {
+                client.newCall(req).execute().use { r ->
+                    when {
+                        r.code == 404 -> error("No published build yet")
+                        r.code == 403 -> error("GitHub is busy, try again in a few minutes")
+                        r.code >= 500 -> throw Temporary("GitHub answered HTTP ${r.code}")
+                        !r.isSuccessful -> error("GitHub answered HTTP ${r.code}")
+                    }
+                    r.body?.string() ?: error("Empty answer")
                 }
-                r.body?.string() ?: error("Empty answer")
             }
             prefs.edit().putLong("lastCheck", System.currentTimeMillis()).apply()
             val o = JSONObject(body)
@@ -131,7 +153,8 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                 dir.listFiles()?.filter { it.name != part.name }?.forEach { it.delete() }
                 _state.value = State.Downloading(r, 0f)
                 val req = Request.Builder().url(r.url).header("User-Agent", "OrbitPlayer-Updater").build()
-                client.newCall(req).execute().use { res ->
+                retrying { client.newCall(req).execute().use { res ->
+                    if (res.code >= 500) throw Temporary("Download failed (HTTP ${res.code})")
                     if (!res.isSuccessful) error("Download failed (HTTP ${res.code})")
                     val body = res.body ?: error("Empty download")
                     val total = body.contentLength().takeIf { it > 0 } ?: r.size
@@ -152,8 +175,8 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                             }
                         }
                     }
-                    if (r.size > 0 && done != r.size) error("Download incomplete, try again")
-                }
+                    if (r.size > 0 && done != r.size) throw Temporary("Download incomplete")
+                } }
                 // must be our own app and really newer
                 val info = context.packageManager.getPackageArchiveInfo(part.path, 0)
                 if (info == null || info.packageName != context.packageName) error("The downloaded file is not a valid Orbit Player update")

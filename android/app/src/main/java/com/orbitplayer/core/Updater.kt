@@ -31,6 +31,8 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
     companion object {
         const val REPO = "belisexhelper/Orbit-player"
         private const val RELEASE_API = "https://api.github.com/repos/$REPO/releases/tags/latest-build"
+        /** backup: the same files on the "apk" branch (raw.githubusercontent.com is another network than release downloads) */
+        private const val BACKUP = "https://raw.githubusercontent.com/$REPO/apk/"
         private val APK_NAME = Regex("""orbit-player-(.+)-(\d+)\.apk""")
         private const val CHECK_EVERY_MS = 12 * 3_600_000L
     }
@@ -92,7 +94,7 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                 .header("Accept", "application/vnd.github+json")
                 .header("User-Agent", "OrbitPlayer-Updater")
                 .build()
-            val body = retrying {
+            val body = try { retrying {
                 client.newCall(req).execute().use { r ->
                     when {
                         r.code == 404 -> error("No published build yet")
@@ -102,6 +104,12 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                     }
                     r.body?.string() ?: error("Empty answer")
                 }
+            } } catch (t: Throwable) {
+                // GitHub's API not answering: the backup knows the newest build too
+                AppLog.w("update check: ${t.message}, using the backup")
+                val backup = runCatching { backupRelease() }.getOrNull() ?: throw t
+                prefs.edit().putLong("lastCheck", System.currentTimeMillis()).apply()
+                return@withContext decide(backup)
             }
             prefs.edit().putLong("lastCheck", System.currentTimeMillis()).apply()
             val o = JSONObject(body)
@@ -120,20 +128,42 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                     date = o.optString("published_at").take(10),
                 )
             }
-            val r = release ?: error("The release has no APK")
-            if (r.versionCode > currentBuild) {
-                val ready = apkFile(r)
-                _state.value = if (ready.exists() && ready.length() == r.size) State.Ready(r, ready) else State.Available(r)
-                r
-            } else {
-                _state.value = State.UpToDate
-                null
-            }
+            decide(release ?: error("The release has no APK"))
         } catch (t: Throwable) {
             AppLog.w("update check failed: ${t.message}")
             _state.value = State.Error(t.message ?: "Could not check for updates")
             null
         }
+    }
+
+    private fun decide(r: Release): Release? =
+        if (r.versionCode > currentBuild) {
+            val ready = apkFile(r)
+            _state.value = if (ready.exists() && ready.length() == r.size) State.Ready(r, ready) else State.Available(r)
+            r
+        } else {
+            _state.value = State.UpToDate
+            null
+        }
+
+    /** The newest build as described by the backup (latest.json on the "apk" branch) */
+    private suspend fun backupRelease(): Release {
+        val body = retrying {
+            client.newCall(Request.Builder().url(BACKUP + "latest.json").header("User-Agent", "OrbitPlayer-Updater").build()).execute().use { r ->
+                if (r.code >= 500) throw Temporary("backup answered HTTP ${r.code}")
+                if (!r.isSuccessful) error("backup answered HTTP ${r.code}")
+                r.body?.string() ?: error("Empty answer")
+            }
+        }
+        val o = JSONObject(body)
+        return Release(
+            versionName = o.getString("versionName"),
+            versionCode = o.getInt("versionCode"),
+            url = BACKUP + o.getString("name"),
+            size = o.optLong("size"),
+            notes = o.optString("notes"),
+            date = o.optString("date"),
+        )
     }
 
     /** Quiet check at start-up, at most every 12 hours */
@@ -157,8 +187,14 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
             try {
                 dir.listFiles()?.filter { it.name != part.name }?.forEach { it.delete() }
                 _state.value = State.Downloading(r, 0f)
-                val req = Request.Builder().url(r.url).header("User-Agent", "OrbitPlayer-Updater").build()
-                retrying(extraTries = 5) { client.newCall(req).execute().use { res ->
+                val backupUrl = BACKUP + "orbit-player-${r.versionName}-${r.versionCode}.apk"
+                val sources = if (r.url == backupUrl) listOf(backupUrl) else listOf(r.url, backupUrl)
+                var lastError: Throwable? = null
+                for (url in sources) {
+                  if (url != sources.first()) AppLog.w("update download: ${lastError?.message}, using the backup")
+                  val req = Request.Builder().url(url).header("User-Agent", "OrbitPlayer-Updater").build()
+                  try {
+                retrying(extraTries = if (url == backupUrl) 2 else 3) { client.newCall(req).execute().use { res ->
                     if (res.code >= 500) throw Temporary("Download failed (HTTP ${res.code})")
                     if (res.code == 404) throw Gone()
                     if (!res.isSuccessful) error("Download failed (HTTP ${res.code})")
@@ -183,6 +219,11 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                     }
                     if (r.size > 0 && done != r.size) throw Temporary("Download incomplete")
                 } }
+                    lastError = null
+                    break
+                  } catch (t: Temporary) { lastError = t } catch (t: java.io.IOException) { lastError = t }
+                }
+                lastError?.let { throw it }
                 // must be our own app and really newer
                 val info = context.packageManager.getPackageArchiveInfo(part.path, 0)
                 if (info == null || info.packageName != context.packageName) error("The downloaded file is not a valid Orbit Player update")

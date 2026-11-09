@@ -87,6 +87,29 @@ jobs:
             gh release create latest-build out/*.apk --title "$TITLE" --notes-file "$RUNNER_TEMP/notes.txt"
           fi
 
+      # Backup source for updates: the same APK on the "apk" branch, served by raw.githubusercontent.com
+      # (another GitHub network than release downloads, which sometimes answer 504). One commit, force-pushed.
+      - name: Backup copy for updates
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          B="$RUNNER_TEMP/apk-branch"
+          rm -rf "$B" && mkdir -p "$B"
+          APK="orbit-player-${APP_VERSION}-${VERSION_CODE}.apk"
+          cp "out/$APK" "$B/"
+          python3 - "$B/latest.json" "$APK" "$APP_VERSION" "$VERSION_CODE" "$(stat -c %s "out/$APK")" "$RUNNER_TEMP/notes.txt" <<'EOF'
+          import json, sys, datetime
+          out, name, ver, code, size, notes = sys.argv[1:]
+          json.dump({"name": name, "versionName": ver, "versionCode": int(code), "size": int(size),
+                     "notes": open(notes).read().strip(), "date": datetime.date.today().isoformat()}, open(out, "w"))
+          EOF
+          cd "$B"
+          git init -q -b apk
+          git add .
+          git -c user.name="Orbit Dev" -c user.email="orbit-dev@users.noreply.github.com" commit -qm "Build ${VERSION_CODE}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" apk
+
       # Screenshots of the main screens (TV and phone) rendered with test data
       - name: Screenshots
         continue-on-error: true

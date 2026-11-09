@@ -64,6 +64,8 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
 
     /** GitHub sometimes answers 502/503/504 or drops the connection for a moment: try up to 3 times */
     private class Temporary(msg: String) : Exception(msg)
+    /** the file is gone: a newer build replaced it on GitHub after the check */
+    private class Gone : Exception("replaced by a newer build")
 
     private suspend fun <T> retrying(block: () -> T): T {
         var wait = 2_000L
@@ -108,6 +110,7 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
             for (i in 0 until (assets?.length() ?: 0)) {
                 val a = assets!!.getJSONObject(i)
                 val m = APK_NAME.matchEntire(a.optString("name")) ?: continue
+                if ((m.groupValues[2].toIntOrNull() ?: 0) <= (release?.versionCode ?: -1)) continue
                 release = Release(
                     versionName = m.groupValues[1],
                     versionCode = m.groupValues[2].toInt(),
@@ -144,9 +147,11 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
 
     private fun apkFile(r: Release) = File(dir, "orbit-player-${r.versionCode}.apk")
 
-    fun download(r: Release) {
+    fun download(first: Release) {
         if (downloadJob?.isActive == true) return
         downloadJob = scope.launch(Dispatchers.IO) {
+          var r = first
+          for (attempt in 0..1) {
             val target = apkFile(r)
             val part = File(dir, target.name + ".part")
             try {
@@ -155,6 +160,7 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                 val req = Request.Builder().url(r.url).header("User-Agent", "OrbitPlayer-Updater").build()
                 retrying { client.newCall(req).execute().use { res ->
                     if (res.code >= 500) throw Temporary("Download failed (HTTP ${res.code})")
+                    if (res.code == 404) throw Gone()
                     if (!res.isSuccessful) error("Download failed (HTTP ${res.code})")
                     val body = res.body ?: error("Empty download")
                     val total = body.contentLength().takeIf { it > 0 } ?: r.size
@@ -183,10 +189,23 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                 target.delete()
                 if (!part.renameTo(target)) error("Could not save the update")
                 _state.value = State.Ready(r, target)
+                return@launch
+            } catch (g: Gone) {
+                part.delete()
+                // a newer build was published meanwhile: check again and download that one
+                _state.value = State.Checking // (check() does nothing while the state says downloading)
+                val newer = if (attempt == 0) check() else null
+                if (newer == null || newer.versionCode == r.versionCode) {
+                    _state.value = State.Error("The update was replaced on GitHub, check again", r)
+                    return@launch
+                }
+                r = newer
             } catch (t: Throwable) {
                 part.delete()
                 _state.value = State.Error(t.message ?: "Download failed", r)
+                return@launch
             }
+          }
         }
     }
 

@@ -72,10 +72,20 @@ jobs:
           # release notes = the commit message (shown in the app's update screen)
           git log -1 --pretty=%B | grep -v -e '^Co-Authored-By' -e '^Claude-Session' > "$RUNNER_TEMP/notes.txt"
           echo "Build ${VERSION_CODE}, commit ${GITHUB_SHA::7}." >> "$RUNNER_TEMP/notes.txt"
-          gh release delete latest-build --cleanup-tag -y || true
-          gh release create latest-build out/*.apk \
-            --title "Build ${VERSION_CODE} (${APP_VERSION})" \
-            --notes-file "$RUNNER_TEMP/notes.txt"
+          TITLE="Build ${VERSION_CODE} (${APP_VERSION})"
+          if gh release view latest-build >/dev/null 2>&1; then
+            # never leave the release empty (the app may be downloading): new files first, then remove the old ones
+            OLD=$(gh release view latest-build --json assets -q '.assets[].name')
+            gh release upload latest-build out/*.apk --clobber
+            NEW=" $(cd out && ls *.apk | tr '\n' ' ') "
+            for a in $OLD; do
+              case "$NEW" in *" $a "*) ;; *) gh release delete-asset latest-build "$a" -y || true ;; esac
+            done
+            gh release edit latest-build --title "$TITLE" --notes-file "$RUNNER_TEMP/notes.txt"
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/latest-build" -f sha="$GITHUB_SHA" -F force=true >/dev/null || true
+          else
+            gh release create latest-build out/*.apk --title "$TITLE" --notes-file "$RUNNER_TEMP/notes.txt"
+          fi
 
       # Screenshots of the main screens (TV and phone) rendered with test data
       - name: Screenshots

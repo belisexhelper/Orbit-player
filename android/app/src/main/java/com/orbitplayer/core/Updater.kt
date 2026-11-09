@@ -67,9 +67,9 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
     /** the file is gone: a newer build replaced it on GitHub after the check */
     private class Gone : Exception("replaced by a newer build")
 
-    private suspend fun <T> retrying(block: () -> T): T {
+    private suspend fun <T> retrying(extraTries: Int = 2, block: () -> T): T {
         var wait = 2_000L
-        repeat(2) {
+        repeat(extraTries) {
             try {
                 return block()
             } catch (t: Temporary) {
@@ -78,7 +78,7 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                 AppLog.w("update: ${t.message}, trying again")
             }
             kotlinx.coroutines.delay(wait)
-            wait *= 2
+            wait = (wait * 2).coerceAtMost(8_000L)
         }
         return block()
     }
@@ -158,7 +158,7 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                 dir.listFiles()?.filter { it.name != part.name }?.forEach { it.delete() }
                 _state.value = State.Downloading(r, 0f)
                 val req = Request.Builder().url(r.url).header("User-Agent", "OrbitPlayer-Updater").build()
-                retrying { client.newCall(req).execute().use { res ->
+                retrying(extraTries = 5) { client.newCall(req).execute().use { res ->
                     if (res.code >= 500) throw Temporary("Download failed (HTTP ${res.code})")
                     if (res.code == 404) throw Gone()
                     if (!res.isSuccessful) error("Download failed (HTTP ${res.code})")

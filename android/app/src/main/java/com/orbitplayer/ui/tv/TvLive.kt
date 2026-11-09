@@ -107,13 +107,8 @@ fun TvLiveScreen(vm: AppViewModel) {
     var menuFor by remember { mutableStateOf<ChannelEntity?>(null) }
     var groupMenu by remember { mutableStateOf<ChannelGroup?>(null) }
 
-    // Preview: plays the focused channel after a short pause (so fast scrolling doesn't start streams)
-    LaunchedEffect(focused, settings.livePreview, playerOpen) {
-        val ch = focused ?: return@LaunchedEffect
-        if (!settings.livePreview || playerOpen) return@LaunchedEffect
-        delay(700)
-        if (playing?.channel?.key != ch.key) vm.playChannel(ch, channels, fullscreen = false)
-    }
+    // Preview: only the channel chosen with OK keeps playing behind the lists; moving through the
+    // channels only changes the programmes on the right (no new stream for every channel passed)
 
     TvLiveContent(
         groups = groups,

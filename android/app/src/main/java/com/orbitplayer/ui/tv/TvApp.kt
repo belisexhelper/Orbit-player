@@ -35,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -131,13 +132,17 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
     val playerOpen by vm.playerOpen.collectAsState()
     val settings by vm.settings.collectAsState()
     var railFocused by remember { mutableStateOf(false) }
-    // the menu opens only when focus stays in it for a moment, so it never flashes while focus passes through
+    // The menu opens only when the user is in it: focus stays there for a moment AND a key of the remote brought it
+    // there (or was pressed there). Focus parked in the menu by the app (start-up while channels load, a screen
+    // changing, the safety net) leaves it closed, so it never flashes.
     var railOpen by remember { mutableStateOf(false) }
-    LaunchedEffect(railFocused) {
-        if (railFocused) {
-            delay(180)
-            railOpen = true
-        } else railOpen = false
+    var keyTick by remember { mutableIntStateOf(0) }
+    var lastKeyAt by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(railFocused, keyTick) {
+        if (!railFocused) { railOpen = false; return@LaunchedEffect }
+        if (railOpen || System.currentTimeMillis() - lastKeyAt > 600) return@LaunchedEffect
+        delay(180)
+        railOpen = true
     }
     var askExit by remember { mutableStateOf(false) }
     val railFocus = remember { FocusRequester() }
@@ -242,7 +247,13 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
         delay(150)
         if (!vm.playerOpen.value && vm.playback.item.value?.isLive == true) vm.playback.stop()
     }
-    Box(Modifier.fillMaxSize().background(Orbit.colors.background).onFocusChanged { anyFocus = it.hasFocus }) {
+    Box(
+        Modifier.fillMaxSize().background(Orbit.colors.background).onFocusChanged { anyFocus = it.hasFocus }
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown) { lastKeyAt = System.currentTimeMillis(); keyTick++ }
+                false
+            },
+    ) {
         // Live TV with preview: the channel keeps playing full screen behind the lists (same picture as in the player)
         if (livePreview) com.orbitplayer.ui.common.PlayerSurface(vm.playback, settings, settings.aspect, Modifier.fillMaxSize())
         Row(Modifier.fillMaxSize()) {

@@ -687,7 +687,7 @@ private fun BoxScope.TvLivePanel(vm: AppViewModel, item: PlayItem, nn: NowNext?,
                 Text(
                     vm.displayName(ch) + (if (progStop > progStart) "  ·  ${Fmt.time(progStart)} – ${Fmt.time(progStop)}" else "") +
                         (if (catchup) "  ·  $behind min behind live" else "") +
-                        pb.bufferedAheadMs.let { if (it >= 0) "  ·  buffer %.1f s".format(it / 1000f) + (if (!catchup) " of %.0f".format(pb.bufferTargetMs / 1000f) else "") else "" },
+                        pb.bufferedAheadMs.let { if (it >= 0) "  ·  buffer %.1f s".format(it / 1000f) + (if (!catchup) " · start at %.0f s".format(pb.bufferTargetMs / 1000f) else "") else "" },
                     color = c.textMuted, style = MaterialTheme.typography.bodyLarge, maxLines = 1,
                 )
             }

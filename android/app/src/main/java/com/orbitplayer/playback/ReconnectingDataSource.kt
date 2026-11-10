@@ -42,6 +42,9 @@ class ReconnectingDataSource(
     private var reconnecting = false
     /** times of the recent reconnects (to give up when the server is really gone) */
     private val recent = ArrayDeque<Long>()
+    /** keeps out what the player already has when a new connection starts in the past */
+    private var gate = TsGate()
+    private val tmp = ByteArray(64 * 1024)
 
     override fun addTransferListener(transferListener: TransferListener) {
         normal.addTransferListener(transferListener)
@@ -54,11 +57,13 @@ class ReconnectingDataSource(
         val src = if (reconnecting) live else normal
         current = src
         if (!reconnecting) return src.open(dataSpec)
+        gate = TsGate()
         // some servers take a few seconds to start a channel: a timeout here is tried again (the stream is warm by then)
         var attempt = 0
         while (true) {
             try {
-                return live.open(dataSpec)
+                live.open(dataSpec)
+                return C.LENGTH_UNSET.toLong() // a live stream has no length (and the gate may leave bytes out)
             } catch (e: IOException) {
                 if (attempt >= 2 || !isTimeout(e) || Thread.currentThread().isInterrupted) throw e
                 attempt++
@@ -80,13 +85,18 @@ class ReconnectingDataSource(
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         val src = current ?: throw IOException("Not open")
         if (!reconnecting) return src.read(buffer, offset, length)
+        if (length == 0) return 0
         var attempt = 0
         while (true) {
+            if (gate.pending > 0) return gate.drain(buffer, offset, length)
             try {
-                val n = live.read(buffer, offset, length)
-                if (n != C.RESULT_END_OF_INPUT) return n
-                // a live stream doesn't end: the server closed the connection
-                throw IOException("Live stream closed by the server")
+                val n = live.read(tmp, 0, minOf(length, tmp.size))
+                if (n == C.RESULT_END_OF_INPUT) {
+                    // a live stream doesn't end: the server closed the connection
+                    throw IOException("Live stream closed by the server")
+                }
+                gate.feed(tmp, 0, n)
+                continue // hand over what may pass (or read more when everything was left out)
             } catch (e: IOException) {
                 if (Thread.currentThread().isInterrupted) throw e
                 val now = SystemClock.elapsedRealtime()
@@ -101,6 +111,7 @@ class ReconnectingDataSource(
                     val s = spec ?: throw e
                     // the same address again, from "now" (no range: it's live)
                     live.open(s.buildUpon().setPosition(0).setLength(C.LENGTH_UNSET.toLong()).build())
+                    gate.reconnected()
                 } catch (ie: InterruptedException) {
                     Thread.currentThread().interrupt()
                     throw e

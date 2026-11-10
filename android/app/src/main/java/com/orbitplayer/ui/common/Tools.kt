@@ -292,7 +292,66 @@ fun SpeedTestScreen(vm: AppViewModel) {
 
 // ---------------------------------------------------------------- diagnostics
 
-data class DiagItem(val title: String, val value: String, val ok: Boolean?)
+data class DiagItem(val title: String, val value: String, val ok: Boolean?, val mono: Boolean = false)
+
+/** what happened while watching since the app started */
+private fun sessionItems(): List<DiagItem> {
+    val s = com.orbitplayer.playback.PlaybackStats
+    val watchedMin = s.totalWatchedMs / 60_000
+    val out = ArrayList<DiagItem>()
+    out += DiagItem(
+        "Live TV since the app started",
+        "watched $watchedMin min · stalls ${s.stalls}" +
+            (if (s.stalls > 0) " (together %.0f s, longest %.0f s)".format(s.stallMs / 1000f, s.longestStallMs / 1000f) else "") +
+            " · new connections ${s.newConnections} · reconnects ${s.reconnects}",
+        if (watchedMin < 1) null else s.stalls == 0 && s.reconnects == 0,
+    )
+    if (s.learnedBuffer.isNotEmpty()) out += DiagItem(
+        "Live buffer raised for unstable servers",
+        s.learnedBuffer.entries.joinToString("\n") { "${it.key}: +%.0f s".format(it.value / 1000f) },
+        null,
+    )
+    val events = s.recent()
+    if (events.isNotEmpty()) out += DiagItem("Recent events", events.take(12).joinToString("\n"), null, mono = true)
+    return out
+}
+
+/** reads the last watched channel (or the first one) for 30 s without playing it */
+private suspend fun runStreamTest(vm: AppViewModel, progress: (Int, Double) -> Unit): List<DiagItem> = withContext(Dispatchers.IO) {
+    val channels = vm.channels.value
+    val ch = channels.firstOrNull { it.key == vm.store.lastChannelKey } ?: channels.firstOrNull()
+        ?: return@withContext listOf(DiagItem("Stream test", "no channels to test", false))
+    // one connection at a time (many servers allow only one): stop what plays
+    withContext(Dispatchers.Main) { vm.playback.stop() }
+    val url = runCatching { vm.repo.channelUrl(ch) }.getOrNull()
+        ?: return@withContext listOf(DiagItem("Stream test", "no address for ${ch.name}", false))
+    val r = com.orbitplayer.tools.ConnectionTest.stream(url, 30) { sec, mbps -> progress(sec, mbps) }
+    val out = ArrayList<DiagItem>()
+    val stable = r.error == null && r.emptySeconds == 0
+    out += DiagItem(
+        "Stream test: ${vm.displayName(ch)}",
+        if (r.seconds <= 1 && r.error != null) "could not read the stream: ${r.error}"
+        else buildString {
+            append("%.1f Mbit/s on average over ${r.seconds} s".format(r.avgMbps))
+            append(" · seconds without data: ${r.emptySeconds}")
+            if (r.gaps > 0) append(" (${r.gaps}× , longest ${r.longestGapS} s)")
+            if (r.error != null) append(" · stopped: ${r.error}")
+        },
+        stable,
+    )
+    out += DiagItem("Data per second (· = nothing arrived)", com.orbitplayer.tools.ConnectionTest.graph(r.perSecondKb), null, mono = true)
+    out += DiagItem(
+        "What it means",
+        when {
+            r.seconds <= 1 && r.error != null -> "The server didn't send the channel. Check the playlist login or try another channel."
+            stable -> "The channel arrived every second: the connection to this server is stable."
+            r.longestGapS >= 4 -> "Data stopped for ${r.longestGapS} s at once: the connection drops for a moment (Wi-Fi signal, router or the server). Keep “Reconnect when a channel stops sending” on; a cable or 5 GHz Wi-Fi usually fixes it."
+            else -> "Short pauses in the data: the connection is uneven. A longer Live TV buffer covers them."
+        },
+        null,
+    )
+    out
+}
 
 @Composable
 fun DiagnosticsScreen(vm: AppViewModel) {
@@ -303,6 +362,18 @@ fun DiagnosticsScreen(vm: AppViewModel) {
     var step by remember { mutableStateOf("") }
     var run by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var streamItems by remember { mutableStateOf<List<DiagItem>>(emptyList()) }
+    var streamRunning by remember { mutableStateOf(false) }
+    fun streamTest() {
+        if (streamRunning) return
+        streamRunning = true
+        scope.launch {
+            streamItems = listOf(DiagItem("Stream test", "starting…", null))
+            streamItems = runStreamTest(vm) { sec, mbps -> streamItems = listOf(DiagItem("Stream test", "reading the channel… $sec / 30 s, %.1f Mbit/s".format(mbps), null)) }
+            streamRunning = false
+        }
+    }
     val runFocus = remember { FocusRequester() }
     if (tv) com.orbitplayer.ui.tv.TvEntryPoint(runFocus)
     LaunchedEffect(Unit) {
@@ -320,6 +391,8 @@ fun DiagnosticsScreen(vm: AppViewModel) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { PageTitle("Diagnostics", vm) }
             OrbitButton(if (running) "Checking…" else "Run again", enabled = !running, focusRequester = runFocus) { run++ }
+            Spacer(Modifier.size(10.dp))
+            OrbitButton(if (streamRunning) "Testing stream…" else "Test stream (30 s)", enabled = !running && !streamRunning) { streamTest() }
             Spacer(Modifier.size(16.dp))
         }
         if (running) Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -328,7 +401,7 @@ fun DiagnosticsScreen(vm: AppViewModel) {
             Text(step, color = c.textMuted)
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(items) { d ->
+            items(streamItems + items + sessionItems()) { d ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val (icon, tint) = when (d.ok) {
                         true -> Icons.Filled.CheckCircle to c.success
@@ -339,12 +412,27 @@ fun DiagnosticsScreen(vm: AppViewModel) {
                     Spacer(Modifier.size(12.dp))
                     Column {
                         Text(d.title, color = c.text, style = MaterialTheme.typography.bodyLarge)
-                        Text(d.value, color = c.textMuted, style = MaterialTheme.typography.bodyMedium)
+                        Text(d.value, color = c.textMuted, style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = if (d.mono) androidx.compose.ui.text.font.FontFamily.Monospace else null)
                     }
                 }
             }
         }
     }
+}
+
+/** ping (connect time), jitter and lost attempts as one line */
+private fun latencyItem(title: String, host: String, port: Int, count: Int, progress: (Int) -> Unit): DiagItem {
+    val l = com.orbitplayer.tools.ConnectionTest.latency(host, port, count, progress = progress)
+    if (l.failed == l.samples) return DiagItem(title, "no answer at all", false)
+    val ok = l.failed == 0 && l.jitterMs < 40 && l.avgMs < 300
+    val verdict = when {
+        l.failed > 0 -> "connection attempts lost: unstable"
+        l.jitterMs >= 40 -> "answers very unevenly: unstable"
+        l.avgMs >= 300 -> "slow to answer"
+        else -> "stable"
+    }
+    return DiagItem(title, "${l.avgMs} ms (${l.minMs}–${l.maxMs}), jitter ${l.jitterMs} ms, lost ${l.failed}/${l.samples} · $verdict", ok)
 }
 
 private suspend fun runDiagnostics(vm: AppViewModel, context: android.content.Context, tv: Boolean, onStep: (String) -> Unit): List<DiagItem> = withContext(Dispatchers.IO) {
@@ -366,12 +454,16 @@ private suspend fun runDiagnostics(vm: AppViewModel, context: android.content.Co
     out += DiagItem("Storage", "$free MB free", free > 500)
     val net = DeviceInfo.networkType(context)
     out += DiagItem("Network", net, net != "No connection")
+    val (netText, netOk) = com.orbitplayer.tools.ConnectionTest.networkDetails(context)
+    if (netText != net) out += DiagItem("Connection", netText, netOk)
     onStep("Checking DNS…")
     val dns = timed { InetAddress.getByName("google.com") }
     out += DiagItem("DNS", dns?.let { "answers in $it ms" } ?: "not working", dns != null && dns < 500)
     onStep("Checking internet…")
     val inet = timed { quick.newCall(Request.Builder().url("https://www.google.com/generate_204").build()).execute().close() }
     out += DiagItem("Internet", inet?.let { "working ($it ms)" } ?: "no access", inet != null)
+    onStep("Measuring ping and jitter to the internet…")
+    out += latencyItem("Ping to the internet (google.com)", "google.com", 443, 10) { onStep("Measuring ping to the internet… $it/10") }
     for (p in vm.repo.db.playlists().all()) {
         onStep("Checking ${p.name}…")
         val target = if (p.type == "xtream") p.server else p.url
@@ -392,6 +484,9 @@ private suspend fun runDiagnostics(vm: AppViewModel, context: android.content.Co
         } else if (p.url.startsWith("http")) {
             val ms = timed { quick.newCall(Request.Builder().url(p.url).head().build()).execute().close() }
             out += DiagItem("Playlist “${p.name}” ($host)", ms?.let { "answers in $it ms" } ?: "not reachable", ms != null)
+        }
+        com.orbitplayer.tools.ConnectionTest.hostPort(target)?.let { (h, port) ->
+            out += latencyItem("Ping to “${p.name}” ($h)", h, port, 20) { onStep("Measuring ping to ${p.name}… $it/20") }
         }
         if (p.lastError.isNotBlank()) out += DiagItem("Last error of “${p.name}”", p.lastError, false)
     }

@@ -77,7 +77,10 @@ class OrbitLoadControl(
         if (stallStartedAt != 0L) {
             val stalled = now - stallStartedAt
             val key = serverKey()
-            extraMs[key] = ((extraMs[key] ?: 0L) + stalled).coerceAtMost(MAX_LIVE_CUSHION_MS)
+            val learned = ((extraMs[key] ?: 0L) + stalled).coerceAtMost(MAX_LIVE_CUSHION_MS)
+            extraMs[key] = learned
+            PlaybackStats.learnedBuffer[key] = learned
+            PlaybackStats.event("Live buffer for $key raised to %.0f s".format((settings().liveBufferMs + learned) / 1000f))
             stallStartedAt = 0L
         }
         return true

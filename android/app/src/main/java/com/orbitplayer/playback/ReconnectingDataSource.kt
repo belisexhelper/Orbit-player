@@ -105,6 +105,7 @@ class ReconnectingDataSource(
                 recent.addLast(now)
                 attempt++
                 AppLog.w("Live stream stopped sending (${e.message}), new connection #$attempt")
+                PlaybackStats.newConnection(if (isTimeout(e)) "4 s nothing" else e.message ?: "connection closed")
                 runCatching { live.close() }
                 try {
                     Thread.sleep(300L * attempt)

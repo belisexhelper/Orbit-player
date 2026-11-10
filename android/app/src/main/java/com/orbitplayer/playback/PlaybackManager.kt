@@ -74,6 +74,17 @@ data class TrackOption(val groupIndex: Int, val trackIndex: Int, val label: Stri
 class PlaybackManager(private val context: Context, private val store: Store, private val repo: ContentRepository) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var built: ExoPlayer? = null
+    /** the current item showed a picture already (buffering after that = a stall) */
+    private var startedPlaying = false
+
+    private fun noteBuffering(buffering: Boolean) {
+        if (!buffering) {
+            if (startedPlaying) PlaybackStats.stallEnded()
+            startedPlaying = true
+        } else if (startedPlaying && _item.value?.isLive == true) {
+            PlaybackStats.stallStarted(_item.value?.title ?: "stream")
+        }
+    }
     private var loadControl: OrbitLoadControl? = null
     private var builtWith: String = ""
 
@@ -141,8 +152,8 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
 
     val vlc: VlcEngine by lazy {
         VlcEngine(context, object : VlcEngine.Events {
-            override fun onPlaying(playing: Boolean) { if (usingVlc) _playing.value = playing }
-            override fun onBuffering(buffering: Boolean) { if (usingVlc) _buffering.value = buffering }
+            override fun onPlaying(playing: Boolean) { if (usingVlc) { _playing.value = playing; PlaybackStats.playing(playing) } }
+            override fun onBuffering(buffering: Boolean) { if (usingVlc) { _buffering.value = buffering; noteBuffering(buffering) } }
             override fun onReady() {
                 if (!usingVlc) return
                 retries = 0
@@ -212,6 +223,8 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
             override fun onPlaybackStateChanged(state: Int) {
                 if (usingVlc) return
                 _buffering.value = state == Player.STATE_BUFFERING
+                if (state == Player.STATE_BUFFERING) noteBuffering(true)
+                if (state == Player.STATE_READY) noteBuffering(false)
                 if (state == Player.STATE_READY) {
                     retries = 0
                     reconnects = 0
@@ -221,7 +234,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (!usingVlc) _playing.value = isPlaying
+                if (!usingVlc) { _playing.value = isPlaying; PlaybackStats.playing(isPlaying) }
             }
 
             override fun onTracksChanged(tracks: Tracks) {
@@ -257,6 +270,8 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         if (prev?.isLive == true && next.isLive && prev.channel?.key != next.channel?.key) previousChannelIndex = _index.value
         _index.value = index
         _item.value = next
+        startedPlaying = false
+        PlaybackStats.streamChanged()
         retries = 0
         reconnects = 0
         reconnectJob?.cancel()
@@ -395,6 +410,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         }
         if (reconnectJob?.isActive == true) return
         reconnects++
+        PlaybackStats.reconnect(_error.value?.takeIf { e -> !e.startsWith("Connection lost") } ?: "stream frozen or lost")
         _error.value = "Connection lost. Reconnecting… ($reconnects)"
         reconnectJob = scope.launch {
             delay((1000L * reconnects).coerceAtMost(8_000L))

@@ -770,6 +770,8 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
     /** VLC's buffering progress in percent */
     val vlcBufferPercent: Int get() = vlc.bufferPercent.toInt()
     /** what the player waits for before the picture starts (the Live TV buffer for channels) */
+    /** movies & series: how far ahead the player loads (the setting) */
+    val vodTargetMs: Long get() = settings.vodBufferMs.toLong()
     val bufferTargetMs: Long get() = if (_item.value?.isLive == true) loadControl?.liveTargetMs ?: settings.liveBufferMs.toLong() else 2_500L
 
     private val enginePositionMs: Long get() = if (usingVlc) vlc.positionMs else built?.currentPosition ?: 0

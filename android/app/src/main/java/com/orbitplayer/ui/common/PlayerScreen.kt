@@ -319,6 +319,7 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
                 while (true) {
                     val ahead = pb.bufferedAheadMs
                     bufText = if (ahead < 0) "Buffering ${pb.vlcBufferPercent}%"
+                    else if (pb.item.value?.isLive != true) "Buffering · %.1f s of %.0f s loaded".format(ahead / 1000f, pb.vodTargetMs / 1000f)
                     else "Buffering %.1f / %.1f s".format(ahead / 1000f, pb.bufferTargetMs / 1000f) +
                         (if (pb.learnedBufferMs > 0) "  (raised for this server)" else "")
                     delay(250)
@@ -988,6 +989,7 @@ private fun BoxScope.TvVodControls(vm: AppViewModel, item: PlayItem, now: Long, 
                     Text(Fmt.duration(shown), color = if (scrub != null) c.accentAlt else Color.White, style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.weight(1f))
                     if (focused) Text(if (scrub != null) "Jumping to ${Fmt.duration(shown)}…" else "◀ ▶  1 min · hold for 5 min", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
+                    else BufferLabel(pb)
                     Spacer(Modifier.weight(1f))
                     Text(if (dur > 0) "−" + Fmt.duration(dur - shown) else "", color = Color.White, style = MaterialTheme.typography.bodyMedium)
                 }
@@ -1077,6 +1079,8 @@ private fun PhoneControls(
                 Row {
                     Text(Fmt.duration(pos), color = Color.White, style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.weight(1f))
+                    BufferLabel(pb)
+                    Spacer(Modifier.weight(1f))
                     Text(Fmt.duration(dur), color = Color.White, style = MaterialTheme.typography.bodySmall)
                 }
             } else nn?.now?.let { p ->
@@ -1129,4 +1133,19 @@ private fun switchEngine(vm: AppViewModel) {
 private fun EnginePill(vm: AppViewModel) {
     val engine by vm.playback.engine.collectAsState()
     Pill(if (engine == "vlc") "VLC" else "EXO", if (engine == "vlc") Orbit.colors.accentAlt else Orbit.colors.textMuted)
+}
+
+
+/** movies, episodes, catch-up: how much is loaded ahead of the setting, updated twice a second */
+@Composable
+private fun BufferLabel(pb: com.orbitplayer.playback.PlaybackManager) {
+    var text by remember { mutableStateOf("") }
+    LaunchedEffect(pb) {
+        while (true) {
+            val ahead = pb.bufferedAheadMs
+            text = if (ahead < 0) "" else "buffer %.0f / %.0f s".format(ahead / 1000f, pb.vodTargetMs / 1000f)
+            delay(500)
+        }
+    }
+    if (text.isNotEmpty()) Text(text, color = Orbit.colors.textMuted, style = MaterialTheme.typography.bodySmall)
 }

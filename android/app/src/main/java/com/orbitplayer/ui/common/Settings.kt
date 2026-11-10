@@ -251,8 +251,8 @@ fun SectionContent(vm: AppViewModel, id: String) {
                     }
                 }
                 item {
-                    val opts = listOf("fast" to "Short · 1.5 s (channels start fastest)", "medium" to "Normal · 4 s", "large" to "Long · 8 s", "xlarge" to "Very long · 15 s (unstable internet)")
-                    SettingRow("Live TV buffer", opts.firstOrNull { it.first == s.liveBuffer }?.second?.substringBefore(" (") ?: "Normal · 4 s",
+                    val opts = listOf("fast" to "Short · 1.5 s (channels start fastest)", "medium" to "Normal · 3 s", "large" to "Long · 6 s", "xlarge" to "Very long · 10 s (unstable internet)")
+                    SettingRow("Live TV buffer", opts.firstOrNull { it.first == s.liveBuffer }?.second?.substringBefore(" (") ?: "Normal · 3 s",
                         "Longer = plays through drops of the connection, channels start a little later") {
                         choice = ChoiceSpec("Live TV buffer", opts, s.liveBuffer) { v -> set { it.copy(liveBuffer = v) } }
                     }

@@ -311,7 +311,21 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
                 ),
         )
 
-        if (buffering && error == null) CircularProgressIndicator(Modifier.align(Alignment.Center).size(56.dp), color = Orbit.colors.accent)
+        if (buffering && error == null) {
+            CircularProgressIndicator(Modifier.align(Alignment.Center).size(56.dp), color = Orbit.colors.accent)
+            // how far the buffer is: shows that the buffer setting is being filled
+            var bufText by remember { mutableStateOf("") }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    val ahead = pb.bufferedAheadMs
+                    bufText = if (ahead >= 0) "Buffering %.1f / %.1f s".format(ahead / 1000f, pb.bufferTargetMs / 1000f)
+                    else "Buffering ${pb.vlcBufferPercent}%"
+                    delay(250)
+                }
+            }
+            Text(bufText, Modifier.align(Alignment.Center).padding(top = 110.dp).background(Color(0x99101521), RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 4.dp),
+                color = Color.White, style = MaterialTheme.typography.bodyMedium)
+        }
         seekNote?.let { note ->
             Text(
                 note,
@@ -671,7 +685,8 @@ private fun BoxScope.TvLivePanel(vm: AppViewModel, item: PlayItem, nn: NowNext?,
                 }
                 Text(
                     vm.displayName(ch) + (if (progStop > progStart) "  ·  ${Fmt.time(progStart)} – ${Fmt.time(progStop)}" else "") +
-                        (if (catchup) "  ·  $behind min behind live" else ""),
+                        (if (catchup) "  ·  $behind min behind live" else "") +
+                        pb.bufferedAheadMs.let { if (it >= 0) "  ·  buffer %.1f s".format(it / 1000f) else "" },
                     color = c.textMuted, style = MaterialTheme.typography.bodyLarge, maxLines = 1,
                 )
             }

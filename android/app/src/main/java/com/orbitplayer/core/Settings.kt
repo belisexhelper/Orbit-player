@@ -58,9 +58,9 @@ data class AppSettings(
     val liveBufferMs: Int
         get() = when (liveBuffer) {
             "fast" -> 1_500
-            "large" -> 8_000
-            "xlarge" -> 15_000
-            else -> 4_000
+            "large" -> 6_000
+            "xlarge" -> 10_000
+            else -> 3_000
         }
 
     val adultWords: List<String> get() = adultKeywords.split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }

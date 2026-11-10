@@ -72,12 +72,19 @@ class VlcEngine(private val context: Context, private val events: Events) {
                 events.onReady()
             }
             MediaPlayer.Event.Paused, MediaPlayer.Event.Stopped -> events.onPlaying(false)
-            MediaPlayer.Event.Buffering -> events.onBuffering(e.buffering < 100f)
+            MediaPlayer.Event.Buffering -> {
+                bufferPercent = e.buffering
+                events.onBuffering(e.buffering < 100f)
+            }
             MediaPlayer.Event.EndReached -> events.onEnded()
             MediaPlayer.Event.EncounteredError -> events.onError()
             MediaPlayer.Event.ESAdded, MediaPlayer.Event.ESDeleted, MediaPlayer.Event.ESSelected -> events.onTracks()
         }
     }
+
+    /** last buffering progress reported by VLC (0–100) */
+    @Volatile var bufferPercent: Float = 0f
+        private set
 
     fun prepare(url: String, startMs: Long, subtitles: List<SubtitleSource>, hardware: Boolean, cachingMs: Int, vod: Boolean = false): Boolean {
         val p = ensure() ?: return false

@@ -733,6 +733,13 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
     }
 
+    /** How much is loaded ahead of the picture (ExoPlayer), -1 when unknown (VLC) */
+    val bufferedAheadMs: Long get() = if (usingVlc) -1L else built?.totalBufferedDuration ?: 0L
+    /** VLC's buffering progress in percent */
+    val vlcBufferPercent: Int get() = vlc.bufferPercent.toInt()
+    /** what the player waits for before the picture starts (the Live TV buffer for channels) */
+    val bufferTargetMs: Long get() = if (_item.value?.isLive == true) settings.liveBufferMs.toLong() else 2_500L
+
     private val enginePositionMs: Long get() = if (usingVlc) vlc.positionMs else built?.currentPosition ?: 0
     val positionMs: Long get() = if (_item.value?.isCatchup == true) catchupOffset + enginePositionMs else enginePositionMs
     val durationMs: Long get() = _item.value?.takeIf { it.isCatchup }?.let { it.catchupEnd - it.catchupStart }

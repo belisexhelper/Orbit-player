@@ -1,5 +1,6 @@
 package com.orbitplayer.playback
 
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
@@ -14,8 +15,12 @@ import com.orbitplayer.core.AppSettings
  * right away, no new player needed):
  *
  *  - Live TV: a live stream arrives only as fast as it is broadcast, so the cushion against a bad
- *    connection is how much the player collects BEFORE it starts the picture (and again after a drop).
- *    That is the Live TV buffer: longer = the channel starts a little later, but plays through short drops.
+ *    connection is how much the player collects BEFORE it starts the picture.
+ *    Many IPTV servers don't send evenly but in chunks (e.g. 20 s at once, then nothing until it is used up).
+ *    Starting the moment a chunk arrives means the next one arrives exactly when the picture runs out:
+ *    every tiny delay of the server is a stall, again and again. So once a stall was seen, the player
+ *    waits the Live TV buffer time AFTER the buffer is filled before it plays: it then runs that much
+ *    behind the chunks, and the next one arrives while there is still picture left.
  *  - Movies & series: they download faster than they play, so the player starts quickly (2.5 s) and keeps
  *    loading ahead up to the Movies & series buffer.
  *
@@ -37,18 +42,43 @@ class OrbitLoadControl(
     0,
     false,
 ) {
+    /** a live stream stalled while playing (this app session): from now on live starts wait a little longer */
+    @Volatile var stallSeen = false
+        private set
+
+    /** when the buffer reached the target in the current buffering period (0 = not yet) */
+    @Volatile private var filledAt = 0L
+
+    /** live, after a stall: how long the player still waits before the picture starts (for the indicator) */
+    val holdRemainingMs: Long
+        get() {
+            val f = filledAt
+            if (f == 0L || !stallSeen) return 0L
+            return (settings().liveBufferMs - (SystemClock.elapsedRealtime() - f)).coerceAtLeast(0L)
+        }
 
     override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean {
         val s = settings()
-        var needUs = if (isLive()) {
-            s.liveBufferMs * 1000L
-        } else {
-            if (parameters.rebuffering) 5_000_000L else 2_500_000L
+        val bufferedUs = Util.getPlayoutDurationForMediaDuration(parameters.bufferedDurationUs, parameters.playbackSpeed)
+        if (!isLive()) {
+            filledAt = 0L
+            return bufferedUs >= if (parameters.rebuffering) 5_000_000L else 2_500_000L
         }
+        if (parameters.rebuffering) stallSeen = true
+        var needUs = s.liveBufferMs * 1000L
         // HLS live starts a fixed distance behind live: more than that can never be buffered
         if (parameters.targetLiveOffsetUs != C.TIME_UNSET) needUs = minOf(needUs, parameters.targetLiveOffsetUs * 8 / 10)
-        val bufferedUs = Util.getPlayoutDurationForMediaDuration(parameters.bufferedDurationUs, parameters.playbackSpeed)
-        return bufferedUs >= needUs
+        if (bufferedUs < needUs) {
+            filledAt = 0L
+            return false
+        }
+        if (!stallSeen) return true
+        // after a stall: hold the Live TV buffer time once the buffer is full, then play
+        val now = SystemClock.elapsedRealtime()
+        if (filledAt == 0L) filledAt = now
+        if (now - filledAt < s.liveBufferMs) return false
+        filledAt = 0L
+        return true
     }
 
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {

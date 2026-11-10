@@ -74,6 +74,7 @@ data class TrackOption(val groupIndex: Int, val trackIndex: Int, val label: Stri
 class PlaybackManager(private val context: Context, private val store: Store, private val repo: ContentRepository) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var built: ExoPlayer? = null
+    private var loadControl: OrbitLoadControl? = null
     private var builtWith: String = ""
 
     private val _item = MutableStateFlow<PlayItem?>(null)
@@ -181,7 +182,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
                 sw.ifEmpty { all }
             })
         }
-        val load = OrbitLoadControl(settings = { settings }, isLive = { _item.value?.isLive == true })
+        val load = OrbitLoadControl(settings = { settings }, isLive = { _item.value?.isLive == true }).also { loadControl = it }
         val http = OkHttpDataSource.Factory(Net.iptv).setUserAgent(Net.USER_AGENT)
         val dataSource = DefaultDataSource.Factory(context, http)
         val extractors = DefaultExtractorsFactory().setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES)
@@ -732,6 +733,9 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         prepare(currentUrl(), p.currentPosition)
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
     }
+
+    /** live after a stall: seconds the player still holds before the picture starts */
+    val holdRemainingMs: Long get() = if (usingVlc) 0L else loadControl?.holdRemainingMs ?: 0L
 
     /** How much is loaded ahead of the picture (ExoPlayer), -1 when unknown (VLC) */
     val bufferedAheadMs: Long get() = if (usingVlc) -1L else built?.totalBufferedDuration ?: 0L

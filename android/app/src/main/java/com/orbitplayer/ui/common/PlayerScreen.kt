@@ -318,8 +318,12 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
             LaunchedEffect(Unit) {
                 while (true) {
                     val ahead = pb.bufferedAheadMs
-                    bufText = if (ahead >= 0) "Buffering %.1f / %.1f s".format(ahead / 1000f, pb.bufferTargetMs / 1000f)
-                    else "Buffering ${pb.vlcBufferPercent}%"
+                    val hold = pb.holdRemainingMs
+                    bufText = when {
+                        ahead < 0 -> "Buffering ${pb.vlcBufferPercent}%"
+                        hold > 0 -> "Buffer %.1f s · starting in %.0f s".format(ahead / 1000f, Math.ceil(hold / 1000.0))
+                        else -> "Buffering %.1f / %.1f s".format(ahead / 1000f, pb.bufferTargetMs / 1000f)
+                    }
                     delay(250)
                 }
             }

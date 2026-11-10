@@ -6,6 +6,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.LoadControl
+import androidx.media3.exoplayer.upstream.DefaultAllocator
 import com.orbitplayer.core.AppSettings
 
 /**
@@ -18,16 +19,24 @@ import com.orbitplayer.core.AppSettings
  *  - Movies & series: they download faster than they play, so the player starts quickly (2.5 s) and keeps
  *    loading ahead up to the Movies & series buffer.
  *
- * The wrapped DefaultLoadControl only sets the outer limits (memory size and 4 minutes at most).
+ * Everything else (memory limit, allocator, back buffer) is ExoPlayer's own DefaultLoadControl;
+ * its time limits are only the outer bounds (4 minutes).
  */
 @OptIn(UnstableApi::class)
 class OrbitLoadControl(
     private val settings: () -> AppSettings,
     private val isLive: () -> Boolean,
-    private val base: DefaultLoadControl = DefaultLoadControl.Builder()
-        .setBufferDurationsMs(240_000, 240_000, 1_000, 1_000)
-        .build(),
-) : LoadControl by base {
+) : DefaultLoadControl(
+    DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE),
+    240_000, // min buffer
+    240_000, // max buffer
+    1_000, // start (our rule below decides)
+    1_000, // start after a drop (our rule below decides)
+    C.LENGTH_UNSET, // memory limit: ExoPlayer's default for the tracks
+    false,
+    0,
+    false,
+) {
 
     override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean {
         val s = settings()
@@ -43,7 +52,7 @@ class OrbitLoadControl(
     }
 
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
-        val more = base.shouldContinueLoading(parameters) // keeps the memory limit
+        val more = super.shouldContinueLoading(parameters) // keeps the memory limit
         if (isLive()) return more
         return more && parameters.bufferedDurationUs < settings().vodBufferMs * 1000L
     }

@@ -84,8 +84,9 @@ class VlcEngine(private val context: Context, private val events: Events) {
         val l = lib ?: return false
         val media = Media(l, Uri.parse(url))
         media.setHWDecoderEnabled(hardware, false)
-        // movies and episodes: at least 5 s of buffer, so a slow moment of the server doesn't freeze the picture
-        media.addOption(":network-caching=${(if (vod) maxOf(cachingMs, 5000) else cachingMs).coerceIn(1500, 20_000)}")
+        // live: the Live TV buffer (how far behind live it plays = cushion for a bad connection);
+        // movies, episodes, catch-up: the Movies & series buffer (VLC keeps at most 20 s, more only delays seeking)
+        media.addOption(":network-caching=${if (vod) cachingMs.coerceIn(3_000, 20_000) else cachingMs.coerceIn(1_000, 30_000)}")
         media.addOption(":file-caching=3000")
         media.addOption(":http-user-agent=${Net.USER_AGENT}")
         if (startMs > 0) media.addOption(":start-time=${startMs / 1000.0}")

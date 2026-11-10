@@ -158,7 +158,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
 
     val player: ExoPlayer
         get() {
-            val sig = "${settings.bufferMs}|${settings.hardwareDecoding}"
+            val sig = "${settings.hardwareDecoding}" // buffer settings are read live by OrbitLoadControl
             val p = built
             if (p != null && (sig == builtWith || _item.value != null)) return p
             p?.release()
@@ -181,10 +181,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
                 sw.ifEmpty { all }
             })
         }
-        val minBuf = s.bufferMs.coerceAtLeast(5000)
-        val load = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(minBuf, (minBuf * 2).coerceAtLeast(50_000), 1500, minBuf.coerceAtMost(5000))
-            .build()
+        val load = OrbitLoadControl(settings = { settings }, isLive = { _item.value?.isLive == true })
         val http = OkHttpDataSource.Factory(Net.iptv).setUserAgent(Net.USER_AGENT)
         val dataSource = DefaultDataSource.Factory(context, http)
         val extractors = DefaultExtractorsFactory().setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES)
@@ -301,7 +298,9 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         lastForceHls = forceHls
         if (chosenEngine() == "vlc") {
             built?.stop()
-            if (vlc.prepare(url, startMs, extraSubs, settings.hardwareDecoding, settings.bufferMs.coerceAtMost(10_000), vod = _item.value?.let { !it.isLive && !it.isCatchup } == true)) {
+            if (vlc.prepare(url, startMs, extraSubs, settings.hardwareDecoding,
+                    if (_item.value?.isLive == true) settings.liveBufferMs else settings.vodBufferMs,
+                    vod = _item.value?.isLive != true)) {
                 _engine.value = "vlc"
                 return
             }
@@ -394,22 +393,26 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         }
     }
 
-    /** Live: if the picture stops moving for 15 s while it should play, reconnect */
+    /** Live: if nothing moves (picture nor incoming data) for 15 s + the Live TV buffer while it should play, reconnect */
     private fun startWatchdog(item: PlayItem) {
         watchdogJob?.cancel()
         if (!item.isLive) return
         watchdogJob = scope.launch {
             var lastPos = -1L
+            var lastBuffered = -1L
             var lastMove = System.currentTimeMillis()
             while (_item.value === item) {
                 delay(2_000)
                 val pos = enginePositionMs
+                // data still coming in (filling the Live TV buffer before the picture starts) is not frozen
+                val buffered = if (usingVlc) 0L else built?.bufferedPosition ?: 0L
                 val now = System.currentTimeMillis()
                 val wants = wantPlay && (if (usingVlc) vlc.hasMedia else built?.playWhenReady == true)
-                if (pos != lastPos || !wants) {
+                if (pos != lastPos || buffered != lastBuffered || !wants) {
                     lastPos = pos
+                    lastBuffered = buffered
                     lastMove = now
-                } else if (now - lastMove > 15_000 && reconnectJob?.isActive != true) {
+                } else if (now - lastMove > 15_000L + settings.liveBufferMs && reconnectJob?.isActive != true) {
                     AppLog.w("Live stream frozen, reconnecting ${item.title}")
                     lastMove = now
                     reconnectLive()

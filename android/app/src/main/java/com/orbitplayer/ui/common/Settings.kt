@@ -251,9 +251,17 @@ fun SectionContent(vm: AppViewModel, id: String) {
                     }
                 }
                 item {
-                    val opts = listOf("small" to "Small (fast start)", "medium" to "Medium", "large" to "Large", "xlarge" to "Very large (unstable lines)")
-                    SettingRow("Buffer size", opts.first { it.first == s.buffer }.second.substringBefore(" (")) {
-                        choice = ChoiceSpec("Buffer size", opts, s.buffer) { v -> set { it.copy(buffer = v) } }
+                    val opts = listOf("fast" to "Short · 1.5 s (channels start fastest)", "medium" to "Normal · 4 s", "large" to "Long · 8 s", "xlarge" to "Very long · 15 s (unstable internet)")
+                    SettingRow("Live TV buffer", opts.firstOrNull { it.first == s.liveBuffer }?.second?.substringBefore(" (") ?: "Normal · 4 s",
+                        "Longer = plays through drops of the connection, channels start a little later") {
+                        choice = ChoiceSpec("Live TV buffer", opts, s.liveBuffer) { v -> set { it.copy(liveBuffer = v) } }
+                    }
+                }
+                item {
+                    val opts = listOf("small" to "Small · 10 s", "medium" to "Normal · 30 s", "large" to "Long · 1 min", "xlarge" to "Very long · 2 min (unstable internet)")
+                    SettingRow("Movies & series buffer", opts.firstOrNull { it.first == s.buffer }?.second?.substringBefore(" (") ?: "Normal · 30 s",
+                        "How far ahead movies, episodes and catch-up are loaded") {
+                        choice = ChoiceSpec("Movies & series buffer", opts, s.buffer) { v -> set { it.copy(buffer = v) } }
                     }
                 }
                 item {
@@ -274,7 +282,7 @@ fun SectionContent(vm: AppViewModel, id: String) {
                     }
                 }
                 item { ToggleRow("Play next episode automatically", s.autoPlayNext) { v -> set { it.copy(autoPlayNext = v) } } }
-                item { Text("Buffer and decoder changes apply to the next stream you start.", Modifier.padding(14.dp), color = Orbit.colors.textMuted, style = MaterialTheme.typography.bodySmall) }
+                item { Text("Buffer changes apply from the next channel or video you start.", Modifier.padding(14.dp), color = Orbit.colors.textMuted, style = MaterialTheme.typography.bodySmall) }
             }
             "subtitles" -> {
                 item { ToggleRow("Show subtitles automatically", s.subtitlesByDefault) { v -> set { it.copy(subtitlesByDefault = v) } } }

@@ -19,7 +19,8 @@ data class AppSettings(
     val bannerSeconds: Int = 4,
     // Player
     val playerEngine: String = "auto", // auto (ExoPlayer, VLC when needed) | exo | vlc
-    val buffer: String = "medium", // small | medium | large | xlarge
+    val buffer: String = "medium", // movies & series: small | medium | large | xlarge
+    val liveBuffer: String = "medium", // live TV: fast | medium | large | xlarge
     val hardwareDecoding: Boolean = true,
     val streamFormat: String = "ts", // ts | m3u8 (Xtream live)
     val autoReconnect: Boolean = true,
@@ -44,12 +45,22 @@ data class AppSettings(
     val autoUpdateCheck: Boolean = true,
     val confirmExit: Boolean = true,
 ) {
-    val bufferMs: Int
+    /** Movies & series: how far ahead the player loads */
+    val vodBufferMs: Int
         get() = when (buffer) {
-            "small" -> 5_000
-            "large" -> 30_000
-            "xlarge" -> 60_000
-            else -> 15_000
+            "small" -> 10_000
+            "large" -> 60_000
+            "xlarge" -> 120_000
+            else -> 30_000
+        }
+
+    /** Live TV: how much the player collects before the picture starts (= the cushion for a bad connection) */
+    val liveBufferMs: Int
+        get() = when (liveBuffer) {
+            "fast" -> 1_500
+            "large" -> 8_000
+            "xlarge" -> 15_000
+            else -> 4_000
         }
 
     val adultWords: List<String> get() = adultKeywords.split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }
@@ -57,7 +68,7 @@ data class AppSettings(
     fun toJson(): JSONObject = JSONObject()
         .put("theme", theme).put("fontScale", fontScale.toDouble()).put("livePreview", livePreview)
         .put("showChannelNumbers", showChannelNumbers).put("stripChannelPrefix", cleanChannelNames).put("bannerSeconds", bannerSeconds)
-        .put("playerEngine", playerEngine).put("buffer", buffer).put("hardwareDecoding", hardwareDecoding).put("streamFormat", streamFormat)
+        .put("playerEngine", playerEngine).put("buffer", buffer).put("liveBuffer", liveBuffer).put("hardwareDecoding", hardwareDecoding).put("streamFormat", streamFormat)
         .put("autoReconnect", autoReconnect).put("aspect", aspect).put("autoPlayNext", autoPlayNext)
         .put("subtitlesByDefault", subtitlesByDefault).put("subtitleLanguage", subtitleLanguage)
         .put("subtitleSize", subtitleSize).put("subtitleBackground", subtitleBackground)
@@ -75,6 +86,10 @@ data class AppSettings(
             bannerSeconds = o.optInt("bannerSeconds", defaults.bannerSeconds).coerceIn(2, 15),
             playerEngine = o.optString("playerEngine", defaults.playerEngine),
             buffer = o.optString("buffer", defaults.buffer),
+            // before there were two settings, the one buffer setting was meant for live TV too
+            liveBuffer = o.optString("liveBuffer", when (o.optString("buffer", "")) {
+                "small" -> "fast"; "large" -> "large"; "xlarge" -> "xlarge"; else -> defaults.liveBuffer
+            }),
             hardwareDecoding = o.optBoolean("hardwareDecoding", defaults.hardwareDecoding),
             streamFormat = o.optString("streamFormat", defaults.streamFormat),
             autoReconnect = o.optBoolean("autoReconnect", defaults.autoReconnect),

@@ -276,6 +276,10 @@ fun SectionContent(vm: AppViewModel, id: String) {
                 }
                 item { ToggleRow("Reconnect automatically", s.autoReconnect) { v -> set { it.copy(autoReconnect = v) } } }
                 item {
+                    ToggleRow("Reconnect when a channel stops sending", s.fastReconnect,
+                        "Unstable servers: after 4 s without data a new connection is opened while the picture plays from the buffer") { v -> set { it.copy(fastReconnect = v) } }
+                }
+                item {
                     val opts = listOf("fit" to "Fit to screen", "fill" to "Stretch to fill", "zoom" to "Zoom (crop)")
                     SettingRow("Default picture", opts.first { it.first == s.aspect }.second) {
                         choice = ChoiceSpec("Default picture", opts, s.aspect) { v -> set { it.copy(aspect = v) } }

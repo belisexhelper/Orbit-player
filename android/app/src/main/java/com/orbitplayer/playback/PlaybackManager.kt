@@ -188,7 +188,14 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
             serverKey = { runCatching { Uri.parse(lastUrl).host }.getOrNull() ?: "" },
         ).also { loadControl = it }
         val http = OkHttpDataSource.Factory(Net.iptv).setUserAgent(Net.USER_AGENT)
-        val dataSource = DefaultDataSource.Factory(context, http)
+        // live channel stream: a connection that sends nothing for 4 s counts as stalled and is replaced
+        val liveHttp = OkHttpDataSource.Factory(Net.iptv.newBuilder().readTimeout(4, java.util.concurrent.TimeUnit.SECONDS).build())
+            .setUserAgent(Net.USER_AGENT)
+        val reconnecting = ReconnectingDataSource.Factory(http, liveHttp) { uri ->
+            settings.fastReconnect && _item.value?.isLive == true && uri.toString() == lastUrl &&
+                !lastForceHls && !lastUrl.contains(".m3u8")
+        }
+        val dataSource = DefaultDataSource.Factory(context, reconnecting)
         val extractors = DefaultExtractorsFactory().setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES)
         val p = ExoPlayer.Builder(context, renderers)
             .setLoadControl(load)

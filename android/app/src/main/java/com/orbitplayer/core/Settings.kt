@@ -24,6 +24,8 @@ data class AppSettings(
     val hardwareDecoding: Boolean = true,
     val streamFormat: String = "ts", // ts | m3u8 (Xtream live)
     val autoReconnect: Boolean = true,
+    /** live: a connection that sends nothing for a few seconds is replaced right away (unstable servers) */
+    val fastReconnect: Boolean = true,
     val aspect: String = "fit", // fit | fill | zoom
     val autoPlayNext: Boolean = true,
     // Subtitles
@@ -69,7 +71,7 @@ data class AppSettings(
         .put("theme", theme).put("fontScale", fontScale.toDouble()).put("livePreview", livePreview)
         .put("showChannelNumbers", showChannelNumbers).put("stripChannelPrefix", cleanChannelNames).put("bannerSeconds", bannerSeconds)
         .put("playerEngine", playerEngine).put("buffer", buffer).put("liveBuffer", liveBuffer).put("hardwareDecoding", hardwareDecoding).put("streamFormat", streamFormat)
-        .put("autoReconnect", autoReconnect).put("aspect", aspect).put("autoPlayNext", autoPlayNext)
+        .put("autoReconnect", autoReconnect).put("fastReconnect", fastReconnect).put("aspect", aspect).put("autoPlayNext", autoPlayNext)
         .put("subtitlesByDefault", subtitlesByDefault).put("subtitleLanguage", subtitleLanguage)
         .put("subtitleSize", subtitleSize).put("subtitleBackground", subtitleBackground)
         .put("parentalPin", parentalPin).put("hideAdult", hideAdult).put("adultKeywords", adultKeywords)
@@ -93,6 +95,7 @@ data class AppSettings(
             hardwareDecoding = o.optBoolean("hardwareDecoding", defaults.hardwareDecoding),
             streamFormat = o.optString("streamFormat", defaults.streamFormat),
             autoReconnect = o.optBoolean("autoReconnect", defaults.autoReconnect),
+            fastReconnect = o.optBoolean("fastReconnect", defaults.fastReconnect),
             aspect = o.optString("aspect", defaults.aspect),
             autoPlayNext = o.optBoolean("autoPlayNext", defaults.autoPlayNext),
             subtitlesByDefault = o.optBoolean("subtitlesByDefault", defaults.subtitlesByDefault),

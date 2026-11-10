@@ -9,18 +9,18 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.LoadControl
 import androidx.media3.exoplayer.upstream.DefaultAllocator
 import com.orbitplayer.core.AppSettings
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * ExoPlayer buffering that follows the two buffer settings, read on every decision (a change applies
  * right away, no new player needed):
  *
  *  - Live TV: a live stream arrives only as fast as it is broadcast, so the cushion against a bad
- *    connection is how much the player collects BEFORE it starts the picture.
- *    Many IPTV servers don't send evenly but in chunks (e.g. 20 s at once, then nothing until it is used up).
- *    Starting the moment a chunk arrives means the next one arrives exactly when the picture runs out:
- *    every tiny delay of the server is a stall, again and again. So once a stall was seen, the player
- *    waits the Live TV buffer time AFTER the buffer is filled before it plays: it then runs that much
- *    behind the chunks, and the next one arrives while there is still picture left.
+ *    connection or server is how much the player collects BEFORE it starts the picture (and after a stall).
+ *    It starts with the Live TV buffer setting. Some servers stop sending for many seconds now and then;
+ *    every stall shows how long such a gap is, so the cushion for that server grows by the length of the
+ *    stall (up to 30 s). After one or two stalls it covers the server's gaps; good servers stay at the setting.
+ *    What was learned is kept per server until the app closes.
  *  - Movies & series: they download faster than they play, so the player starts quickly (2.5 s) and keeps
  *    loading ahead up to the Movies & series buffer.
  *
@@ -31,6 +31,8 @@ import com.orbitplayer.core.AppSettings
 class OrbitLoadControl(
     private val settings: () -> AppSettings,
     private val isLive: () -> Boolean,
+    /** the server of the current stream (what is learned is kept per server) */
+    private val serverKey: () -> String,
 ) : DefaultLoadControl(
     DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE),
     240_000, // min buffer
@@ -42,42 +44,42 @@ class OrbitLoadControl(
     0,
     false,
 ) {
-    /** a live stream stalled while playing (this app session): from now on live starts wait a little longer */
-    @Volatile var stallSeen = false
-        private set
+    companion object {
+        private const val MAX_LIVE_CUSHION_MS = 30_000L
+    }
 
-    /** when the buffer reached the target in the current buffering period (0 = not yet) */
-    @Volatile private var filledAt = 0L
+    /** extra cushion learned per server from its stalls */
+    private val extraMs = ConcurrentHashMap<String, Long>()
 
-    /** live, after a stall: how long the player still waits before the picture starts (for the indicator) */
-    val holdRemainingMs: Long
-        get() {
-            val f = filledAt
-            if (f == 0L || !stallSeen) return 0L
-            return (settings().liveBufferMs - (SystemClock.elapsedRealtime() - f)).coerceAtLeast(0L)
-        }
+    /** when the current stall began (0 = not stalled) */
+    @Volatile private var stallStartedAt = 0L
+
+    /** live: what the player collects before the picture starts (setting + what this server needed) */
+    val liveTargetMs: Long
+        get() = (settings().liveBufferMs + (extraMs[serverKey()] ?: 0L)).coerceAtMost(MAX_LIVE_CUSHION_MS)
+
+    /** extra seconds learned for the current server (0 = none) */
+    val learnedExtraMs: Long get() = extraMs[serverKey()] ?: 0L
 
     override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean {
-        val s = settings()
         val bufferedUs = Util.getPlayoutDurationForMediaDuration(parameters.bufferedDurationUs, parameters.playbackSpeed)
         if (!isLive()) {
-            filledAt = 0L
+            stallStartedAt = 0L
             return bufferedUs >= if (parameters.rebuffering) 5_000_000L else 2_500_000L
         }
-        if (parameters.rebuffering) stallSeen = true
-        var needUs = s.liveBufferMs * 1000L
+        val now = SystemClock.elapsedRealtime()
+        if (parameters.rebuffering && stallStartedAt == 0L) stallStartedAt = now
+        var needUs = liveTargetMs * 1000L
         // HLS live starts a fixed distance behind live: more than that can never be buffered
         if (parameters.targetLiveOffsetUs != C.TIME_UNSET) needUs = minOf(needUs, parameters.targetLiveOffsetUs * 8 / 10)
-        if (bufferedUs < needUs) {
-            filledAt = 0L
-            return false
+        if (bufferedUs < needUs) return false
+        // a stall is over: the server's gap was as long as the stall, add it to this server's cushion
+        if (stallStartedAt != 0L) {
+            val stalled = now - stallStartedAt
+            val key = serverKey()
+            extraMs[key] = ((extraMs[key] ?: 0L) + stalled).coerceAtMost(MAX_LIVE_CUSHION_MS)
+            stallStartedAt = 0L
         }
-        if (!stallSeen) return true
-        // after a stall: hold the Live TV buffer time once the buffer is full, then play
-        val now = SystemClock.elapsedRealtime()
-        if (filledAt == 0L) filledAt = now
-        if (now - filledAt < s.liveBufferMs) return false
-        filledAt = 0L
         return true
     }
 
@@ -85,5 +87,10 @@ class OrbitLoadControl(
         val more = super.shouldContinueLoading(parameters) // keeps the memory limit
         if (isLive()) return more
         return more && parameters.bufferedDurationUs < settings().vodBufferMs * 1000L
+    }
+
+    /** a new stream starts: a stall of the previous one doesn't count */
+    fun newStream() {
+        stallStartedAt = 0L
     }
 }

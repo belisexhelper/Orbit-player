@@ -318,12 +318,9 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
             LaunchedEffect(Unit) {
                 while (true) {
                     val ahead = pb.bufferedAheadMs
-                    val hold = pb.holdRemainingMs
-                    bufText = when {
-                        ahead < 0 -> "Buffering ${pb.vlcBufferPercent}%"
-                        hold > 0 -> "Buffer %.1f s · starting in %.0f s".format(ahead / 1000f, Math.ceil(hold / 1000.0))
-                        else -> "Buffering %.1f / %.1f s".format(ahead / 1000f, pb.bufferTargetMs / 1000f)
-                    }
+                    bufText = if (ahead < 0) "Buffering ${pb.vlcBufferPercent}%"
+                    else "Buffering %.1f / %.1f s".format(ahead / 1000f, pb.bufferTargetMs / 1000f) +
+                        (if (pb.learnedBufferMs > 0) "  (raised for this server)" else "")
                     delay(250)
                 }
             }
@@ -690,7 +687,7 @@ private fun BoxScope.TvLivePanel(vm: AppViewModel, item: PlayItem, nn: NowNext?,
                 Text(
                     vm.displayName(ch) + (if (progStop > progStart) "  ·  ${Fmt.time(progStart)} – ${Fmt.time(progStop)}" else "") +
                         (if (catchup) "  ·  $behind min behind live" else "") +
-                        pb.bufferedAheadMs.let { if (it >= 0) "  ·  buffer %.1f s".format(it / 1000f) else "" },
+                        pb.bufferedAheadMs.let { if (it >= 0) "  ·  buffer %.1f s".format(it / 1000f) + (if (!catchup) " of %.0f".format(pb.bufferTargetMs / 1000f) else "") else "" },
                     color = c.textMuted, style = MaterialTheme.typography.bodyLarge, maxLines = 1,
                 )
             }

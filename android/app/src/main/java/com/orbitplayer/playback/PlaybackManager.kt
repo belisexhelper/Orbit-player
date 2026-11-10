@@ -182,7 +182,11 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
                 sw.ifEmpty { all }
             })
         }
-        val load = OrbitLoadControl(settings = { settings }, isLive = { _item.value?.isLive == true }).also { loadControl = it }
+        val load = OrbitLoadControl(
+            settings = { settings },
+            isLive = { _item.value?.isLive == true },
+            serverKey = { runCatching { Uri.parse(lastUrl).host }.getOrNull() ?: "" },
+        ).also { loadControl = it }
         val http = OkHttpDataSource.Factory(Net.iptv).setUserAgent(Net.USER_AGENT)
         val dataSource = DefaultDataSource.Factory(context, http)
         val extractors = DefaultExtractorsFactory().setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES)
@@ -309,6 +313,7 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         }
         if (usingVlc) vlc.stop()
         _engine.value = "exo"
+        loadControl?.newStream()
         val p = player
         val b = MediaItem.Builder().setUri(Uri.parse(url))
         if (forceHls || url.contains(".m3u8")) b.setMimeType(MimeTypes.APPLICATION_M3U8)
@@ -734,15 +739,15 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
     }
 
-    /** live after a stall: seconds the player still holds before the picture starts */
-    val holdRemainingMs: Long get() = if (usingVlc) 0L else loadControl?.holdRemainingMs ?: 0L
+    /** live: extra cushion the player learned for this server from its stalls */
+    val learnedBufferMs: Long get() = if (usingVlc) 0L else loadControl?.learnedExtraMs ?: 0L
 
     /** How much is loaded ahead of the picture (ExoPlayer), -1 when unknown (VLC) */
     val bufferedAheadMs: Long get() = if (usingVlc) -1L else built?.totalBufferedDuration ?: 0L
     /** VLC's buffering progress in percent */
     val vlcBufferPercent: Int get() = vlc.bufferPercent.toInt()
     /** what the player waits for before the picture starts (the Live TV buffer for channels) */
-    val bufferTargetMs: Long get() = if (_item.value?.isLive == true) settings.liveBufferMs.toLong() else 2_500L
+    val bufferTargetMs: Long get() = if (_item.value?.isLive == true) loadControl?.liveTargetMs ?: settings.liveBufferMs.toLong() else 2_500L
 
     private val enginePositionMs: Long get() = if (usingVlc) vlc.positionMs else built?.currentPosition ?: 0
     val positionMs: Long get() = if (_item.value?.isCatchup == true) catchupOffset + enginePositionMs else enginePositionMs

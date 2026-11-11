@@ -126,7 +126,6 @@ fun SettingsScreen(vm: AppViewModel) {
         val back = vm.settingsReturn
         var current by remember { mutableStateOf(back?.first?.takeIf { id -> sections.any { it.id == id } } ?: sections.first().id) }
         val first = remember { FocusRequester() }
-    var externalDownload by remember { mutableStateOf(false) }
         // coming back from Speed test, Diagnostics…: focus the row that opened it
         com.orbitplayer.ui.tv.TvEntryPoint(if (back != null) vm.settingsReturnFocus else first)
         if (back != null) LaunchedEffect(Unit) {
@@ -365,6 +364,7 @@ private fun AboutText(tv: Boolean) {
 @Composable
 private fun UpdateCard(vm: AppViewModel) {
     val c = Orbit.colors
+    var externalDownload by remember { mutableStateOf(false) }
     val updater = vm.app.updater
     val state by updater.state.collectAsState()
     val context = LocalContext.current

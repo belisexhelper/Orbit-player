@@ -64,9 +64,9 @@ class OrbitLoadControl(
     val liveTargetMs: Long
         get() = (settings().liveBufferMs + learnedExtraMs).coerceAtMost(MAX_LIVE_CUSHION_MS)
 
-    /** movies & series: the Movies & series buffer; catch-up: the Live TV buffer (with Auto buffer) */
+    /** movies, series and catch-up: the Movies & series buffer */
     val aheadTargetMs: Long
-        get() = if (isCatchup()) liveTargetMs else settings().vodBufferMs.toLong()
+        get() = settings().vodBufferMs.toLong() // catch-up too: it comes from the server's archive, not live
 
     /** extra seconds learned for the current server (0 = none, or Auto buffer is off) */
     val learnedExtraMs: Long get() = if (settings().autoLiveBuffer) extraMs[serverKey()] ?: 0L else 0L

@@ -56,10 +56,10 @@ class OrbitLoadControl(
 
     /** live: what the player collects before the picture starts (setting + what this server needed) */
     val liveTargetMs: Long
-        get() = (settings().liveBufferMs + (extraMs[serverKey()] ?: 0L)).coerceAtMost(MAX_LIVE_CUSHION_MS)
+        get() = (settings().liveBufferMs + learnedExtraMs).coerceAtMost(MAX_LIVE_CUSHION_MS)
 
-    /** extra seconds learned for the current server (0 = none) */
-    val learnedExtraMs: Long get() = extraMs[serverKey()] ?: 0L
+    /** extra seconds learned for the current server (0 = none, or Auto buffer is off) */
+    val learnedExtraMs: Long get() = if (settings().autoLiveBuffer) extraMs[serverKey()] ?: 0L else 0L
 
     override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean {
         val bufferedUs = Util.getPlayoutDurationForMediaDuration(parameters.bufferedDurationUs, parameters.playbackSpeed)
@@ -74,6 +74,7 @@ class OrbitLoadControl(
         if (parameters.targetLiveOffsetUs != C.TIME_UNSET) needUs = minOf(needUs, parameters.targetLiveOffsetUs * 8 / 10)
         if (bufferedUs < needUs) return false
         // a stall is over: the server's gap was as long as the stall, add it to this server's cushion
+        if (stallStartedAt != 0L && !settings().autoLiveBuffer) stallStartedAt = 0L
         if (stallStartedAt != 0L) {
             val stalled = now - stallStartedAt
             val key = serverKey()

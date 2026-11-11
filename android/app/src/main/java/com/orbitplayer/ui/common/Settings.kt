@@ -258,6 +258,10 @@ fun SectionContent(vm: AppViewModel, id: String) {
                     }
                 }
                 item {
+                    ToggleRow("Auto buffer", s.autoLiveBuffer,
+                        "When a server's channels stall, its Live TV buffer grows by the length of the stall (up to 30 s). Off: always the value above") { v -> set { it.copy(autoLiveBuffer = v) } }
+                }
+                item {
                     val opts = listOf("small" to "Small · 10 s", "medium" to "Normal · 30 s", "large" to "Long · 1 min", "xlarge" to "Very long · 2 min (unstable internet)")
                     SettingRow("Movies & series buffer", opts.firstOrNull { it.first == s.buffer }?.second?.substringBefore(" (") ?: "Normal · 30 s",
                         "How far ahead movies, episodes and catch-up are loaded") {

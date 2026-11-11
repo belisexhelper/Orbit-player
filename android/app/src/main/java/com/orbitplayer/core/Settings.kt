@@ -21,6 +21,8 @@ data class AppSettings(
     val playerEngine: String = "auto", // auto (ExoPlayer, VLC when needed) | exo | vlc
     val buffer: String = "medium", // movies & series: small | medium | large | xlarge
     val liveBuffer: String = "medium", // live TV: fast | medium | large | xlarge
+    /** live: raise the buffer for a server whose channels stall (by the length of each stall, up to 30 s) */
+    val autoLiveBuffer: Boolean = true,
     val hardwareDecoding: Boolean = true,
     val streamFormat: String = "ts", // ts | m3u8 (Xtream live)
     val autoReconnect: Boolean = true,
@@ -70,7 +72,7 @@ data class AppSettings(
     fun toJson(): JSONObject = JSONObject()
         .put("theme", theme).put("fontScale", fontScale.toDouble()).put("livePreview", livePreview)
         .put("showChannelNumbers", showChannelNumbers).put("stripChannelPrefix", cleanChannelNames).put("bannerSeconds", bannerSeconds)
-        .put("playerEngine", playerEngine).put("buffer", buffer).put("liveBuffer", liveBuffer).put("hardwareDecoding", hardwareDecoding).put("streamFormat", streamFormat)
+        .put("playerEngine", playerEngine).put("buffer", buffer).put("liveBuffer", liveBuffer).put("autoLiveBuffer", autoLiveBuffer).put("hardwareDecoding", hardwareDecoding).put("streamFormat", streamFormat)
         .put("autoReconnect", autoReconnect).put("fastReconnect", fastReconnect).put("aspect", aspect).put("autoPlayNext", autoPlayNext)
         .put("subtitlesByDefault", subtitlesByDefault).put("subtitleLanguage", subtitleLanguage)
         .put("subtitleSize", subtitleSize).put("subtitleBackground", subtitleBackground)
@@ -88,6 +90,7 @@ data class AppSettings(
             bannerSeconds = o.optInt("bannerSeconds", defaults.bannerSeconds).coerceIn(2, 15),
             playerEngine = o.optString("playerEngine", defaults.playerEngine),
             buffer = o.optString("buffer", defaults.buffer),
+            autoLiveBuffer = o.optBoolean("autoLiveBuffer", defaults.autoLiveBuffer),
             // before there were two settings, the one buffer setting was meant for live TV too
             liveBuffer = o.optString("liveBuffer", when (o.optString("buffer", "")) {
                 "small" -> "fast"; "large" -> "large"; "xlarge" -> "xlarge"; else -> defaults.liveBuffer

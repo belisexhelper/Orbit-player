@@ -13,6 +13,11 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.SystemUpdate
 import android.net.Uri
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.focusGroup
@@ -121,6 +126,7 @@ fun SettingsScreen(vm: AppViewModel) {
         val back = vm.settingsReturn
         var current by remember { mutableStateOf(back?.first?.takeIf { id -> sections.any { it.id == id } } ?: sections.first().id) }
         val first = remember { FocusRequester() }
+    var externalDownload by remember { mutableStateOf(false) }
         // coming back from Speed test, Diagnostics…: focus the row that opened it
         com.orbitplayer.ui.tv.TvEntryPoint(if (back != null) vm.settingsReturnFocus else first)
         if (back != null) LaunchedEffect(Unit) {
@@ -423,9 +429,61 @@ private fun UpdateCard(vm: AppViewModel) {
                 Updater.State.Checking -> OrbitButton("Checking…", enabled = false, focusRequester = first) {}
                 else -> OrbitButton("Check for updates", icon = Icons.Filled.Refresh, primary = true, focusRequester = first) { scope.launch { updater.check() } }
             }
+            // devices that don't let apps install updates: download with a browser or the Downloader app
+            OrbitButton("External download", icon = Icons.Filled.OpenInBrowser) { externalDownload = true }
+        }
+    }
+    if (externalDownload) ExternalDownloadDialog(onFail = { vm.toast(it) }) { externalDownload = false }
+}
+
+private const val EXTERNAL_DOWNLOAD = "https://tiny.cx/orbitplayer"
+
+/** The newest APK by a link outside the app: open it in a browser here, or scan the QR code with a phone */
+@Composable
+private fun ExternalDownloadDialog(onFail: (String) -> Unit, onDismiss: () -> Unit) {
+    val c = Orbit.colors
+    val context = LocalContext.current
+    val openFocus = remember { FocusRequester() }
+    val qr = remember { qrBitmap(EXTERNAL_DOWNLOAD, 512) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(80)
+        runCatching { openFocus.requestFocus() }
+    }
+    OrbitDialog(onDismiss, "External download") {
+        Column(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "When the update can't be installed from the app: open this address in the browser or the Downloader app, " +
+                    "install the downloaded file, and your playlists and settings stay.",
+                color = c.textMuted, style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                if (qr != null) androidx.compose.foundation.Image(
+                    qr.asImageBitmap(), "QR code of the download link",
+                    Modifier.size(150.dp).background(Color.White, RoundedCornerShape(8.dp)).padding(6.dp),
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(EXTERNAL_DOWNLOAD.removePrefix("https://"), color = c.accent, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("Scan with a phone, or type it in the TV's browser / Downloader.", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OrbitButton("Open in browser", icon = Icons.Filled.OpenInBrowser, primary = true, focusRequester = openFocus) {
+                    val ok = runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(EXTERNAL_DOWNLOAD)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }.isSuccess
+                    if (!ok) onFail("No browser on this device: use the Downloader app or scan the code with a phone")
+                }
+                OrbitButton("Close") { onDismiss() }
+            }
         }
     }
 }
+
+private fun qrBitmap(text: String, size: Int): android.graphics.Bitmap? = runCatching {
+    val m = com.google.zxing.qrcode.QRCodeWriter().encode(text, com.google.zxing.BarcodeFormat.QR_CODE, size, size, mapOf(com.google.zxing.EncodeHintType.MARGIN to 1))
+    val pixels = IntArray(size * size) { i -> if (m.get(i % size, i / size)) android.graphics.Color.BLACK else android.graphics.Color.WHITE }
+    android.graphics.Bitmap.createBitmap(pixels, size, size, android.graphics.Bitmap.Config.ARGB_8888)
+}.getOrNull()
 
 @Composable
 private fun ReleaseInfo(r: Updater.Release) {

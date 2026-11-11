@@ -91,6 +91,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation("com.google.zxing:core:3.5.3") // QR code for the external download link
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

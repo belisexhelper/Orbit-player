@@ -10,7 +10,7 @@ plugins {
 }
 
 // Version: versionName is set here, versionCode comes from CI (build number)
-val appVersionName = "0.2.0"
+val appVersionName = "5.0.0" // major.minor.patch: big change . smaller feature . fix
 val appVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
 
 // Release signing: from environment (GitHub Secrets) or keystore.properties

@@ -48,6 +48,10 @@ class OrbitLoadControl(
         private const val MAX_LIVE_CUSHION_MS = 30_000L
     }
 
+    /** movies: what the player waits for right now (2.5 s at the start, the setting after a stall) */
+    @Volatile var currentNeedMs: Long = 2_500L
+        private set
+
     /** extra cushion learned per server from its stalls */
     private val extraMs = ConcurrentHashMap<String, Long>()
 
@@ -65,7 +69,11 @@ class OrbitLoadControl(
         val bufferedUs = Util.getPlayoutDurationForMediaDuration(parameters.bufferedDurationUs, parameters.playbackSpeed)
         if (!isLive()) {
             stallStartedAt = 0L
-            return bufferedUs >= if (parameters.rebuffering) 5_000_000L else 2_500_000L
+            // movies: start fast; after a stall collect the Movies & series buffer before going on, so a slow
+            // connection plays a long while between stalls (if memory fills up first, ExoPlayer goes on by itself)
+            val needMs = if (parameters.rebuffering) settings().vodBufferMs.toLong() else 2_500L
+            currentNeedMs = needMs
+            return bufferedUs >= needMs * 1000L
         }
         val now = SystemClock.elapsedRealtime()
         if (parameters.rebuffering && stallStartedAt == 0L) stallStartedAt = now

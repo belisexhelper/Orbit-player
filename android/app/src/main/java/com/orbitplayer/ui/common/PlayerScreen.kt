@@ -319,7 +319,7 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
                 while (true) {
                     val ahead = pb.bufferedAheadMs
                     bufText = if (ahead < 0) "Buffering ${pb.vlcBufferPercent}%"
-                    else if (pb.item.value?.isLive != true) "Buffering · %.1f s of %.0f s loaded".format(ahead / 1000f, pb.vodTargetMs / 1000f)
+                    else if (pb.item.value?.isLive != true) "Buffering %.1f / %.0f s".format(ahead / 1000f, pb.bufferTargetMs / 1000f)
                     else "Buffering %.1f / %.1f s".format(ahead / 1000f, pb.bufferTargetMs / 1000f) +
                         (if (pb.learnedBufferMs > 0) "  (raised for this server)" else "")
                     delay(250)

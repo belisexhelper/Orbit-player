@@ -269,7 +269,7 @@ fun SectionContent(vm: AppViewModel, id: String) {
                 item {
                     val opts = listOf("small" to "Small · 10 s", "medium" to "Normal · 30 s", "large" to "Long · 1 min", "xlarge" to "Very long · 2 min (unstable internet)")
                     SettingRow("Movies & series buffer", opts.firstOrNull { it.first == s.buffer }?.second?.substringBefore(" (") ?: "Normal · 30 s",
-                        "How far ahead movies, episodes and catch-up are loaded") {
+                        "Loaded ahead while playing; after a stall the player collects this much before going on") {
                         choice = ChoiceSpec("Movies & series buffer", opts, s.buffer) { v -> set { it.copy(buffer = v) } }
                     }
                 }
@@ -436,7 +436,7 @@ private fun UpdateCard(vm: AppViewModel) {
     if (externalDownload) ExternalDownloadDialog(onFail = { vm.toast(it) }) { externalDownload = false }
 }
 
-private const val EXTERNAL_DOWNLOAD = "https://tiny.cx/orbitplayer"
+private const val EXTERNAL_DOWNLOAD = "https://tiny.cc/orbitplayer"
 
 /** The newest APK by a link outside the app: open it in a browser here, or scan the QR code with a phone */
 @Composable
@@ -452,8 +452,8 @@ private fun ExternalDownloadDialog(onFail: (String) -> Unit, onDismiss: () -> Un
     OrbitDialog(onDismiss, "External download") {
         Column(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                "When the update can't be installed from the app: open this address in the browser or the Downloader app, " +
-                    "install the downloaded file, and your playlists and settings stay.",
+                "When the update can't be installed from the app: open the download in a browser here, or scan the code " +
+                    "with a phone. Install the downloaded file; your playlists and settings stay.",
                 color = c.textMuted, style = MaterialTheme.typography.bodyMedium,
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -461,10 +461,7 @@ private fun ExternalDownloadDialog(onFail: (String) -> Unit, onDismiss: () -> Un
                     qr.asImageBitmap(), "QR code of the download link",
                     Modifier.size(150.dp).background(Color.White, RoundedCornerShape(8.dp)).padding(6.dp),
                 )
-                Column(Modifier.weight(1f)) {
-                    Text(EXTERNAL_DOWNLOAD.removePrefix("https://"), color = c.accent, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("Scan with a phone, or type it in the TV's browser / Downloader.", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
-                }
+                Text("Scan with a phone camera to download the newest Orbit Player.", Modifier.weight(1f), color = c.textMuted, style = MaterialTheme.typography.bodySmall)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OrbitButton("Open in browser", icon = Icons.Filled.OpenInBrowser, primary = true, focusRequester = openFocus) {

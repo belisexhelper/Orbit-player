@@ -198,7 +198,10 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
             isLive = { _item.value?.isLive == true },
             serverKey = { runCatching { Uri.parse(lastUrl).host }.getOrNull() ?: "" },
         ).also { loadControl = it }
-        val http = OkHttpDataSource.Factory(Net.iptv).setUserAgent(Net.USER_AGENT)
+        // movies, episodes, catch-up, HLS: a connection that sends nothing for 10 s counts as stuck; ExoPlayer then
+        // opens a new one at the exact place it stopped (instead of waiting up to 2 minutes while the buffer runs out)
+        val http = OkHttpDataSource.Factory(Net.iptv.newBuilder().readTimeout(10, java.util.concurrent.TimeUnit.SECONDS).build())
+            .setUserAgent(Net.USER_AGENT)
         // live channel stream: a connection that sends nothing for 4 s counts as stalled and is replaced
         val liveHttp = OkHttpDataSource.Factory(Net.iptv.newBuilder().readTimeout(4, java.util.concurrent.TimeUnit.SECONDS).build())
             .setUserAgent(Net.USER_AGENT)
@@ -210,7 +213,11 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         val extractors = DefaultExtractorsFactory().setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES)
         val p = ExoPlayer.Builder(context, renderers)
             .setLoadControl(load)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSource, extractors))
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(dataSource, extractors)
+                    // a stuck connection is tried again a few more times before playback gives up
+                    .setLoadErrorHandlingPolicy(androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(6)),
+            )
             .build()
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
             .setPreferredTextLanguage(s.subtitleLanguage)

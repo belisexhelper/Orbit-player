@@ -292,150 +292,199 @@ fun SpeedTestScreen(vm: AppViewModel) {
 
 // ---------------------------------------------------------------- diagnostics
 
-data class DiagItem(val title: String, val value: String, val ok: Boolean?, val mono: Boolean = false)
+/** good = green, warn = orange, bad = red, info = grey, pending = still being tested */
+enum class DiagStatus { GOOD, WARN, BAD, INFO, PENDING }
+
+data class DiagItem(val title: String, val value: String, val status: DiagStatus, val mono: Boolean = false) {
+    constructor(title: String, value: String, ok: Boolean?, mono: Boolean = false) :
+        this(title, value, when (ok) { true -> DiagStatus.GOOD; false -> DiagStatus.BAD; null -> DiagStatus.INFO }, mono)
+}
+
+private val WARN_COLOR = androidx.compose.ui.graphics.Color(0xFFFFA726)
+
+/**
+ * One button runs everything (about a minute, the 30 s stream test included); on TV every result is on one
+ * screen in three columns, filled in as each test finishes: device & network · IPTV server & stream · live TV.
+ */
+@Composable
+fun DiagnosticsScreen(vm: AppViewModel) {
+    val c = Orbit.colors
+    val tv = LocalIsTv.current
+    val context = LocalContext.current
+    // results by key (filled in as they come); the order of the keys is the order on screen
+    val results = remember { androidx.compose.runtime.mutableStateMapOf<String, DiagItem>() }
+    var running by remember { mutableStateOf(false) }
+    var step by remember { mutableStateOf("") }
+    var run by remember { mutableIntStateOf(0) }
+    var startedAt by remember { mutableStateOf(0L) }
+    val runFocus = remember { FocusRequester() }
+    if (tv) com.orbitplayer.ui.tv.TvEntryPoint(runFocus)
+    LaunchedEffect(Unit) {
+        repeat(5) {
+            delay(80)
+            if (runCatching { runFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+        }
+    }
+    LaunchedEffect(run) {
+        running = true
+        startedAt = System.currentTimeMillis()
+        results.clear()
+        runDiagnostics(vm, context, tv, onStep = { step = it }) { key, item -> results[key] = item }
+        running = false
+        step = ""
+    }
+    // session numbers change while the tests run
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { delay(1000); tick++ } }
+    val session = remember(tick, running) { sessionItems() }
+
+    val device = results.filterKeys { it.startsWith("d") }.toSortedMap().values.toList()
+    val server = results.filterKeys { it.startsWith("s") }.toSortedMap().values.toList()
+
+    Column(Modifier.fillMaxSize().padding(end = 24.dp)) {
+        // header: title, what is being tested, the button (always on screen)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { PageTitle("Diagnostics", vm) }
+            OrbitButton(if (running) "Testing…" else "Run all tests again", enabled = !running, focusRequester = runFocus) { run++ }
+        }
+        val verdict = overallVerdict(device + server, running)
+        Row(Modifier.padding(start = 24.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (running) {
+                CircularProgressIndicator(Modifier.size(16.dp), color = c.accent, strokeWidth = 2.dp)
+                Spacer(Modifier.size(10.dp))
+                val secs = ((System.currentTimeMillis() - startedAt) / 1000).toInt().let { if (tick >= 0) it else 0 }
+                Text("$step  ·  $secs s (about 1 minute in total)", color = c.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+            } else if (verdict != null) {
+                Text(verdict.first, color = statusColor(verdict.second), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        if (tv) {
+            Row(Modifier.fillMaxSize().padding(start = 24.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                DiagColumn("Device & network", device, Modifier.weight(1f))
+                DiagColumn("IPTV server & stream", server, Modifier.weight(1.15f))
+                DiagColumn("Live TV since the app started", session, Modifier.weight(1f))
+            }
+        } else {
+            // phone: one list (scrolls)
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(device + server + session) { d -> DiagRow(d) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagColumn(title: String, items: List<DiagItem>, modifier: Modifier) {
+    val c = Orbit.colors
+    Column(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(title.uppercase(Locale.ROOT), color = c.accent, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        if (items.isEmpty()) Text("waiting…", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
+        items.forEach { DiagRow(it, compact = true) }
+    }
+}
+
+@Composable
+private fun statusColor(s: DiagStatus) = when (s) {
+    DiagStatus.GOOD -> Orbit.colors.success
+    DiagStatus.WARN -> WARN_COLOR
+    DiagStatus.BAD -> Orbit.colors.live
+    DiagStatus.INFO, DiagStatus.PENDING -> Orbit.colors.textMuted
+}
+
+@Composable
+private fun DiagRow(d: DiagItem, compact: Boolean = false) {
+    val c = Orbit.colors
+    Row(verticalAlignment = Alignment.Top) {
+        if (d.status == DiagStatus.PENDING) CircularProgressIndicator(Modifier.padding(top = 2.dp).size(16.dp), color = c.accent, strokeWidth = 2.dp)
+        else Icon(
+            when (d.status) {
+                DiagStatus.GOOD -> Icons.Filled.CheckCircle
+                DiagStatus.WARN, DiagStatus.BAD -> Icons.Filled.Error
+                else -> Icons.Filled.Info
+            },
+            null, Modifier.size(if (compact) 18.dp else 22.dp), tint = statusColor(d.status),
+        )
+        Spacer(Modifier.size(8.dp))
+        Column {
+            Text(d.title, color = c.text, style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(
+                d.value,
+                color = if (d.status == DiagStatus.WARN || d.status == DiagStatus.BAD) statusColor(d.status) else c.textMuted,
+                style = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                fontFamily = if (d.mono) androidx.compose.ui.text.font.FontFamily.Monospace else null,
+                maxLines = if (d.mono) 8 else 3,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** one sentence on top: what is wrong, if anything */
+private fun overallVerdict(items: List<DiagItem>, running: Boolean): Pair<String, DiagStatus>? {
+    if (running || items.isEmpty()) return null
+    val bad = items.filter { it.status == DiagStatus.BAD }
+    val warn = items.filter { it.status == DiagStatus.WARN }
+    return when {
+        bad.isNotEmpty() -> "Problem: " + bad.joinToString(", ") { it.title.substringBefore(" (").lowercase(Locale.ROOT) } to DiagStatus.BAD
+        warn.isNotEmpty() -> "Works, but watch out: " + warn.joinToString(", ") { it.title.substringBefore(" (").lowercase(Locale.ROOT) } to DiagStatus.WARN
+        else -> "Everything looks good: the connection and the server are stable." to DiagStatus.GOOD
+    }
+}
 
 /** what happened while watching since the app started */
 private fun sessionItems(): List<DiagItem> {
     val s = com.orbitplayer.playback.PlaybackStats
     val watchedMin = s.totalWatchedMs / 60_000
     val out = ArrayList<DiagItem>()
+    out += DiagItem("Watched", "$watchedMin min", DiagStatus.INFO)
     out += DiagItem(
-        "Live TV since the app started",
-        "watched $watchedMin min · stalls ${s.stalls}" +
-            (if (s.stalls > 0) " (together %.0f s, longest %.0f s)".format(s.stallMs / 1000f, s.longestStallMs / 1000f) else "") +
-            " · new connections ${s.newConnections} · reconnects ${s.reconnects}",
-        if (watchedMin < 1) null else s.stalls == 0 && s.reconnects == 0,
+        "Stalls",
+        if (s.stalls == 0) "none" else "${s.stalls} · together %.0f s · longest %.0f s".format(s.stallMs / 1000f, s.longestStallMs / 1000f),
+        when { s.stalls == 0 -> if (watchedMin < 1) DiagStatus.INFO else DiagStatus.GOOD; s.stalls <= 2 -> DiagStatus.WARN; else -> DiagStatus.BAD },
+    )
+    out += DiagItem(
+        "Connections replaced / reconnects",
+        "${s.newConnections} / ${s.reconnects}",
+        when { s.newConnections + s.reconnects == 0 -> if (watchedMin < 1) DiagStatus.INFO else DiagStatus.GOOD; s.reconnects == 0 -> DiagStatus.WARN; else -> DiagStatus.BAD },
     )
     if (s.learnedBuffer.isNotEmpty()) out += DiagItem(
-        "Live buffer raised for unstable servers",
+        "Auto buffer raised",
         s.learnedBuffer.entries.joinToString("\n") { "${it.key}: +%.0f s".format(it.value / 1000f) },
-        null,
+        DiagStatus.WARN,
     )
     val events = s.recent()
-    if (events.isNotEmpty()) out += DiagItem("Recent events", events.take(12).joinToString("\n"), null, mono = true)
+    out += DiagItem("Recent events", if (events.isEmpty()) "nothing yet" else events.take(8).joinToString("\n"), DiagStatus.INFO, mono = events.isNotEmpty())
     return out
 }
 
-/** reads the last watched channel (or the first one) for 30 s without playing it */
-private suspend fun runStreamTest(vm: AppViewModel, progress: (Int, Double) -> Unit): List<DiagItem> = withContext(Dispatchers.IO) {
-    val channels = vm.channels.value
-    val ch = channels.firstOrNull { it.key == vm.store.lastChannelKey } ?: channels.firstOrNull()
-        ?: return@withContext listOf(DiagItem("Stream test", "no channels to test", false))
-    // one connection at a time (many servers allow only one): stop what plays
-    withContext(Dispatchers.Main) { vm.playback.stop() }
-    val url = runCatching { vm.repo.channelUrl(ch) }.getOrNull()
-        ?: return@withContext listOf(DiagItem("Stream test", "no address for ${ch.name}", false))
-    val r = com.orbitplayer.tools.ConnectionTest.stream(url, 30) { sec, mbps -> progress(sec, mbps) }
-    val out = ArrayList<DiagItem>()
-    val stable = r.error == null && r.emptySeconds == 0
-    out += DiagItem(
-        "Stream test: ${vm.displayName(ch)}",
-        if (r.seconds <= 1 && r.error != null) "could not read the stream: ${r.error}"
-        else buildString {
-            append("%.1f Mbit/s on average over ${r.seconds} s".format(r.avgMbps))
-            append(" · seconds without data: ${r.emptySeconds}")
-            if (r.gaps > 0) append(" (${r.gaps}× , longest ${r.longestGapS} s)")
-            if (r.error != null) append(" · stopped: ${r.error}")
-        },
-        stable,
-    )
-    out += DiagItem("Data per second (· = nothing arrived)", com.orbitplayer.tools.ConnectionTest.graph(r.perSecondKb), null, mono = true)
-    out += DiagItem(
-        "What it means",
-        when {
-            r.seconds <= 1 && r.error != null -> "The server didn't send the channel. Check the playlist login or try another channel."
-            stable -> "The channel arrived every second: the connection to this server is stable."
-            r.longestGapS >= 4 -> "Data stopped for ${r.longestGapS} s at once: the connection drops for a moment (Wi-Fi signal, router or the server). Keep “Reconnect when a channel stops sending” on; a cable or 5 GHz Wi-Fi usually fixes it."
-            else -> "Short pauses in the data: the connection is uneven. A longer Live TV buffer covers them."
-        },
-        null,
-    )
-    out
-}
-
-@Composable
-fun DiagnosticsScreen(vm: AppViewModel) {
-    val c = Orbit.colors
-    val tv = LocalIsTv.current
-    var items by remember { mutableStateOf<List<DiagItem>>(emptyList()) }
-    var running by remember { mutableStateOf(false) }
-    var step by remember { mutableStateOf("") }
-    var run by remember { mutableIntStateOf(0) }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var streamItems by remember { mutableStateOf<List<DiagItem>>(emptyList()) }
-    var streamRunning by remember { mutableStateOf(false) }
-    fun streamTest() {
-        if (streamRunning) return
-        streamRunning = true
-        scope.launch {
-            streamItems = listOf(DiagItem("Stream test", "starting…", null))
-            streamItems = runStreamTest(vm) { sec, mbps -> streamItems = listOf(DiagItem("Stream test", "reading the channel… $sec / 30 s, %.1f Mbit/s".format(mbps), null)) }
-            streamRunning = false
-        }
-    }
-    val runFocus = remember { FocusRequester() }
-    if (tv) com.orbitplayer.ui.tv.TvEntryPoint(runFocus)
-    LaunchedEffect(Unit) {
-        repeat(5) {
-            kotlinx.coroutines.delay(80)
-            if (runCatching { runFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-        }
-    }
-    LaunchedEffect(run) {
-        running = true
-        items = runDiagnostics(vm, context, tv) { step = it }
-        running = false
-    }
-    Column(Modifier.fillMaxSize()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { PageTitle("Diagnostics", vm) }
-            OrbitButton(if (running) "Checking…" else "Run again", enabled = !running, focusRequester = runFocus) { run++ }
-            Spacer(Modifier.size(10.dp))
-            OrbitButton(if (streamRunning) "Testing stream…" else "Test stream (30 s)", enabled = !running && !streamRunning) { streamTest() }
-            Spacer(Modifier.size(16.dp))
-        }
-        if (running) Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(Modifier.size(20.dp), color = c.accent)
-            Spacer(Modifier.size(12.dp))
-            Text(step, color = c.textMuted)
-        }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(streamItems + items + sessionItems()) { d ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val (icon, tint) = when (d.ok) {
-                        true -> Icons.Filled.CheckCircle to c.success
-                        false -> Icons.Filled.Error to c.live
-                        null -> Icons.Filled.Info to c.textMuted
-                    }
-                    Icon(icon, null, tint = tint)
-                    Spacer(Modifier.size(12.dp))
-                    Column {
-                        Text(d.title, color = c.text, style = MaterialTheme.typography.bodyLarge)
-                        Text(d.value, color = c.textMuted, style = MaterialTheme.typography.bodyMedium,
-                            fontFamily = if (d.mono) androidx.compose.ui.text.font.FontFamily.Monospace else null)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** ping (connect time), jitter and lost attempts as one line */
+/** ping: under 10 ms green, 10–50 ms orange, over 50 ms or lost / uneven red (unstable) */
 private fun latencyItem(title: String, host: String, port: Int, count: Int, progress: (Int) -> Unit): DiagItem {
     val l = com.orbitplayer.tools.ConnectionTest.latency(host, port, count, progress = progress)
-    if (l.failed == l.samples) return DiagItem(title, "no answer at all", false)
-    val ok = l.failed == 0 && l.jitterMs < 40 && l.avgMs < 300
-    val verdict = when {
-        l.failed > 0 -> "connection attempts lost: unstable"
-        l.jitterMs >= 40 -> "answers very unevenly: unstable"
-        l.avgMs >= 300 -> "slow to answer"
-        else -> "stable"
+    if (l.failed == l.samples) return DiagItem(title, "no answer at all", DiagStatus.BAD)
+    val status = when {
+        l.failed > 0 || l.avgMs > 50 || l.jitterMs > 30 -> DiagStatus.BAD
+        l.avgMs >= 10 -> DiagStatus.WARN
+        else -> DiagStatus.GOOD
     }
-    return DiagItem(title, "${l.avgMs} ms (${l.minMs}–${l.maxMs}), jitter ${l.jitterMs} ms, lost ${l.failed}/${l.samples} · $verdict", ok)
+    val verdict = when {
+        l.failed > 0 -> "attempts lost · unstable"
+        l.jitterMs > 30 -> "very uneven · unstable"
+        l.avgMs > 50 -> "unstable"
+        l.avgMs >= 10 -> "ok"
+        else -> "excellent"
+    }
+    return DiagItem(title, "${l.avgMs} ms (${l.minMs}–${l.maxMs}), jitter ${l.jitterMs} ms, lost ${l.failed}/${l.samples} · $verdict", status)
 }
 
-private suspend fun runDiagnostics(vm: AppViewModel, context: android.content.Context, tv: Boolean, onStep: (String) -> Unit): List<DiagItem> = withContext(Dispatchers.IO) {
+/**
+ * All tests, results handed over one by one ([put] with a key: "d…" device & network, "s…" server & stream;
+ * keys sort into screen order).
+ */
+private suspend fun runDiagnostics(
+    vm: AppViewModel, context: android.content.Context, tv: Boolean,
+    onStep: (String) -> Unit, put: (String, DiagItem) -> Unit,
+) = withContext(Dispatchers.IO) {
+    val main: (String, DiagItem) -> Unit = { k, v -> kotlinx.coroutines.runBlocking(Dispatchers.Main) { put(k, v) } }
     val quick = Net.iptv.newBuilder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
     fun timed(block: () -> Unit): Long? {
         val t = System.nanoTime()
@@ -445,29 +494,34 @@ private suspend fun runDiagnostics(vm: AppViewModel, context: android.content.Co
             null
         }
     }
-    val out = ArrayList<DiagItem>()
+    // ---- device & network
     val (total, avail) = DeviceInfo.memoryMb(context)
-    out += DiagItem("Device", "${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})", null)
-    out += DiagItem("App", "Orbit Player ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${if (tv) "TV interface" else "touch interface"}", null)
-    out += DiagItem("Memory", "$avail MB free of $total MB", avail > 200)
+    main("d01", DiagItem("Device", "${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} · Orbit ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", DiagStatus.INFO))
     val free = DeviceInfo.freeStorageMb(context)
-    out += DiagItem("Storage", "$free MB free", free > 500)
+    main("d02", DiagItem("Memory · storage", "$avail of $total MB free · $free MB storage free", avail > 200 && free > 500))
     val net = DeviceInfo.networkType(context)
-    out += DiagItem("Network", net, net != "No connection")
     val (netText, netOk) = com.orbitplayer.tools.ConnectionTest.networkDetails(context)
-    if (netText != net) out += DiagItem("Connection", netText, netOk)
-    onStep("Checking DNS…")
+    main("d03", DiagItem("Connection", if (netText != net) netText else net, if (net == "No connection") DiagStatus.BAD else when (netOk) { true -> DiagStatus.GOOD; false -> DiagStatus.WARN; null -> DiagStatus.INFO }))
+    onStep("Checking DNS and internet…")
     val dns = timed { InetAddress.getByName("google.com") }
-    out += DiagItem("DNS", dns?.let { "answers in $it ms" } ?: "not working", dns != null && dns < 500)
-    onStep("Checking internet…")
     val inet = timed { quick.newCall(Request.Builder().url("https://www.google.com/generate_204").build()).execute().close() }
-    out += DiagItem("Internet", inet?.let { "working ($it ms)" } ?: "no access", inet != null)
-    onStep("Measuring ping and jitter to the internet…")
-    out += latencyItem("Ping to the internet (google.com)", "google.com", 443, 10) { onStep("Measuring ping to the internet… $it/10") }
-    for (p in vm.repo.db.playlists().all()) {
+    main("d04", DiagItem(
+        "DNS · internet",
+        (dns?.let { "DNS $it ms" } ?: "DNS not working") + " · " + (inet?.let { "internet working ($it ms)" } ?: "no internet"),
+        when { dns == null || inet == null -> DiagStatus.BAD; dns > 500 -> DiagStatus.WARN; else -> DiagStatus.GOOD },
+    ))
+    main("d05", DiagItem("Ping to the internet (google.com)", "measuring…", DiagStatus.PENDING))
+    main("d05", latencyItem("Ping to the internet (google.com)", "google.com", 443, 10) { onStep("Ping to the internet… $it/10") })
+
+    // ---- IPTV server(s)
+    val playlists = vm.repo.db.playlists().all()
+    if (playlists.isEmpty()) main("s00", DiagItem("IPTV", "no playlist added", DiagStatus.INFO))
+    playlists.forEachIndexed { i, p ->
+        val k = "s%02d".format(i * 4)
         onStep("Checking ${p.name}…")
         val target = if (p.type == "xtream") p.server else p.url
         val host = runCatching { URI(target).host }.getOrNull() ?: "local file"
+        main("${k}a", DiagItem("Playlist “${p.name}” ($host)", "checking…", DiagStatus.PENDING))
         if (p.type == "xtream") {
             var detail = ""
             val ms = timed {
@@ -480,15 +534,63 @@ private suspend fun runDiagnostics(vm: AppViewModel, context: android.content.Co
                     if (exp != null && exp > 0) append(", expires ${java.text.DateFormat.getDateInstance().format(java.util.Date(exp * 1000))}")
                 }
             }
-            out += DiagItem("Playlist “${p.name}” ($host)", ms?.let { "answers in $it ms, $detail" } ?: "server not answering or wrong login", ms != null && ms < 2000)
+            main("${k}a", DiagItem("Playlist “${p.name}” ($host)", ms?.let { "answers in $it ms, $detail" } ?: "server not answering or wrong login", when { ms == null -> DiagStatus.BAD; ms > 2000 -> DiagStatus.WARN; else -> DiagStatus.GOOD }))
         } else if (p.url.startsWith("http")) {
             val ms = timed { quick.newCall(Request.Builder().url(p.url).head().build()).execute().close() }
-            out += DiagItem("Playlist “${p.name}” ($host)", ms?.let { "answers in $it ms" } ?: "not reachable", ms != null)
-        }
+            main("${k}a", DiagItem("Playlist “${p.name}” ($host)", ms?.let { "answers in $it ms" } ?: "not reachable", ms != null))
+        } else main("${k}a", DiagItem("Playlist “${p.name}”", "local file", DiagStatus.INFO))
+        if (p.lastError.isNotBlank()) main("${k}b", DiagItem("Last error of “${p.name}”", p.lastError, DiagStatus.BAD))
         com.orbitplayer.tools.ConnectionTest.hostPort(target)?.let { (h, port) ->
-            out += latencyItem("Ping to “${p.name}” ($h)", h, port, 20) { onStep("Measuring ping to ${p.name}… $it/20") }
+            main("${k}c", DiagItem("Ping to the server ($h)", "measuring…", DiagStatus.PENDING))
+            main("${k}c", latencyItem("Ping to the server ($h)", h, port, 20) { onStep("Ping to ${p.name}… $it/20") })
         }
-        if (p.lastError.isNotBlank()) out += DiagItem("Last error of “${p.name}”", p.lastError, false)
     }
-    out
+
+    // ---- stream test: the last watched channel (or the first one) read for 30 s
+    val channels = vm.channels.value
+    val ch = channels.firstOrNull { it.key == vm.store.lastChannelKey } ?: channels.firstOrNull()
+    if (ch == null) {
+        main("s90", DiagItem("Stream test", "no channels to test", DiagStatus.INFO))
+    } else {
+        val name = vm.displayName(ch)
+        // one connection at a time (many servers allow only one): stop what plays
+        withContext(Dispatchers.Main) { vm.playback.stop() }
+        main("s90", DiagItem("Stream test: $name", "starting…", DiagStatus.PENDING))
+        val url = runCatching { vm.repo.channelUrl(ch) }.getOrNull()
+        if (url == null) {
+            main("s90", DiagItem("Stream test: $name", "no address for this channel", DiagStatus.BAD))
+        } else {
+            var lastShown = 0
+            val r = com.orbitplayer.tools.ConnectionTest.stream(url, 30) { sec, mbps ->
+                onStep("Reading the channel “$name”… $sec / 30 s")
+                if (sec != lastShown) {
+                    lastShown = sec
+                    main("s90", DiagItem("Stream test: $name", "reading… $sec / 30 s, %.1f Mbit/s".format(mbps), DiagStatus.PENDING))
+                }
+            }
+            val stable = r.error == null && r.emptySeconds == 0
+            main("s90", DiagItem(
+                "Stream test: $name",
+                if (r.seconds <= 1 && r.error != null) "could not read the stream: ${r.error}"
+                else buildString {
+                    append("%.1f Mbit/s average over ${r.seconds} s".format(r.avgMbps))
+                    append(" · seconds without data: ${r.emptySeconds}")
+                    if (r.gaps > 0) append(" (${r.gaps}×, longest ${r.longestGapS} s)")
+                    if (r.error != null) append(" · stopped: ${r.error}")
+                },
+                when { stable -> DiagStatus.GOOD; r.longestGapS >= 4 || (r.seconds <= 1 && r.error != null) -> DiagStatus.BAD; else -> DiagStatus.WARN },
+            ))
+            main("s91", DiagItem("Data per second (· = nothing arrived)", com.orbitplayer.tools.ConnectionTest.graph(r.perSecondKb), DiagStatus.INFO, mono = true))
+            main("s92", DiagItem(
+                "What it means",
+                when {
+                    r.seconds <= 1 && r.error != null -> "The server didn't send the channel. Check the playlist login or try another channel."
+                    stable -> "The channel arrived every second: the connection to this server is stable."
+                    r.longestGapS >= 4 -> "Data stopped for ${r.longestGapS} s at once: the connection drops for a moment (Wi-Fi signal, router or the server). Keep “Reconnect when a channel stops sending” and Auto buffer on; a cable or a stronger Wi-Fi signal usually fixes it."
+                    else -> "Short pauses in the data: the connection is uneven. Auto buffer covers them."
+                },
+                DiagStatus.INFO,
+            ))
+        }
+    }
 }

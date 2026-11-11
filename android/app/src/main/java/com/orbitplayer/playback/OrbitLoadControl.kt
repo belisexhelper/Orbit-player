@@ -101,7 +101,12 @@ class OrbitLoadControl(
         return true
     }
 
+    /** last known buffer (ms), readable from any thread (the live data source uses it) */
+    @Volatile var lastBufferedMs: Long = 0L
+        private set
+
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
+        lastBufferedMs = parameters.bufferedDurationUs / 1000
         val more = super.shouldContinueLoading(parameters) // keeps the memory limit
         if (isLive()) return more
         return more && parameters.bufferedDurationUs < aheadTargetMs * 1000L

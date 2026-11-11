@@ -23,19 +23,34 @@ import java.io.IOException
 @OptIn(UnstableApi::class)
 class ReconnectingDataSource(
     private val normal: DataSource,
-    private val live: DataSource,
+    /** live connections by how long they wait without data before counting as stuck (seconds → source) */
+    private val lives: List<Pair<Int, DataSource>>,
     /** true when this address is the live channel being played and fast reconnect is on */
     private val reconnectFor: (Uri) -> Boolean,
+    /** how much the player has buffered (ms): with a big buffer a pause of the server is no reason for a new connection */
+    private val bufferedMs: () -> Long,
 ) : DataSource {
 
     class Factory(
         private val normal: DataSource.Factory,
-        private val live: DataSource.Factory,
+        private val lives: List<Pair<Int, DataSource.Factory>>,
         private val reconnectFor: (Uri) -> Boolean,
+        private val bufferedMs: () -> Long,
     ) : DataSource.Factory {
         override fun createDataSource(): DataSource =
-            ReconnectingDataSource(normal.createDataSource(), live.createDataSource(), reconnectFor)
+            ReconnectingDataSource(normal.createDataSource(), lives.map { it.first to it.second.createDataSource() }, reconnectFor, bufferedMs)
     }
+
+    /** the live connection in use (its wait-for-data time fits the buffer when it was opened) */
+    private var live: DataSource = lives.first().second
+
+    /** wait longer for data when more is buffered: about half the buffer, between 5 and 20 s */
+    private fun pickLive(): DataSource {
+        val waitS = (bufferedMs() / 2000).toInt()
+        live = (lives.lastOrNull { it.first <= waitS } ?: lives.first()).second
+        return live
+    }
+    private var gateUri: Uri? = null
 
     private var current: DataSource? = null
     private var spec: DataSpec? = null
@@ -48,16 +63,21 @@ class ReconnectingDataSource(
 
     override fun addTransferListener(transferListener: TransferListener) {
         normal.addTransferListener(transferListener)
-        live.addTransferListener(transferListener)
+        lives.forEach { it.second.addTransferListener(transferListener) }
     }
 
     override fun open(dataSpec: DataSpec): Long {
         spec = dataSpec
         reconnecting = reconnectFor(dataSpec.uri)
-        val src = if (reconnecting) live else normal
+        val src = if (reconnecting) pickLive() else normal
         current = src
         if (!reconnecting) return src.open(dataSpec)
-        gate = TsGate()
+        // the same channel opened again by ExoPlayer (after an error): keep what was learned, so the part the
+        // server sends again is left out here too; another channel: start fresh
+        if (gateUri != dataSpec.uri) {
+            gate = TsGate()
+            gateUri = dataSpec.uri
+        } else gate.reconnected()
         // some servers take a few seconds to start a channel: a timeout here is tried again (the stream is warm by then)
         var attempt = 0
         while (true) {
@@ -105,12 +125,14 @@ class ReconnectingDataSource(
                 recent.addLast(now)
                 attempt++
                 AppLog.w("Live stream stopped sending (${e.message}), new connection #$attempt")
-                PlaybackStats.newConnection(if (isTimeout(e)) "4 s nothing" else e.message ?: "connection closed")
+                PlaybackStats.newConnection(if (isTimeout(e)) "server silent" else e.message ?: "connection closed")
                 runCatching { live.close() }
                 try {
                     Thread.sleep(300L * attempt)
                     val s = spec ?: throw e
                     // the same address again, from "now" (no range: it's live)
+                    pickLive()
+                    current = live
                     live.open(s.buildUpon().setPosition(0).setLength(C.LENGTH_UNSET.toLong()).build())
                     gate.reconnected()
                 } catch (ie: InterruptedException) {

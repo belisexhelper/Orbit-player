@@ -18,7 +18,9 @@ class TsGate {
         const val SYNC = 0x47
         const val WRAP = 1L shl 33
         const val RESET_BACK = 30L * 90_000 // a jump back of more than 30 s = new clock, not an overlap
-        const val MAX_DROPPED = 6_000 // ~1.1 MB: give up waiting and pass everything
+        // give up waiting only when nothing tells the time any more (~3.7 MB without a timestamp on a waiting
+        // stream); a long overlap (servers resend up to half a minute) keeps being left out however long it is
+        const val MAX_BLIND = 20_000
     }
 
     private val pkt = ByteArray(SIZE)
@@ -124,11 +126,14 @@ class TsGate {
                 w -= pid
                 true
             }
-            else -> false
+            else -> {
+                if (pts >= 0) dropped = 0 // a timestamp of a waiting stream: still the overlap, keep leaving it out
+                false
+            }
         }
         if (w != null) {
             if (!pass) dropped++
-            if (w.isEmpty() || dropped > MAX_DROPPED) {
+            if (w.isEmpty() || dropped > MAX_BLIND) {
                 waiting = null // all streams continue (or give up waiting)
                 flushPartial = true
             }

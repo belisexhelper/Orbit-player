@@ -236,13 +236,20 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
             .setUserAgent(Net.USER_AGENT)
             .setTransferListener(byteCounter)
         // live channel stream: a connection that sends nothing for 4 s counts as stalled and is replaced
-        val liveHttp = OkHttpDataSource.Factory(Net.iptv.newBuilder().readTimeout(4, java.util.concurrent.TimeUnit.SECONDS).build())
-            .setUserAgent(Net.USER_AGENT)
-            .setTransferListener(byteCounter)
-        val reconnecting = ReconnectingDataSource.Factory(http, liveHttp) { uri ->
-            settings.fastReconnect && _item.value?.isLive == true && uri.toString() == lastUrl &&
-                !lastForceHls && !lastUrl.contains(".m3u8")
+        // (how long it may stay silent grows with the buffer: 5 s at the start, up to 20 s with a full buffer)
+        val liveHttp = listOf(5, 8, 12, 20).map { s ->
+            s to OkHttpDataSource.Factory(Net.iptv.newBuilder().readTimeout(s.toLong(), java.util.concurrent.TimeUnit.SECONDS).build())
+                .setUserAgent(Net.USER_AGENT)
+                .setTransferListener(byteCounter)
         }
+        val reconnecting = ReconnectingDataSource.Factory(
+            http, liveHttp,
+            reconnectFor = { uri ->
+                settings.fastReconnect && _item.value?.isLive == true && uri.toString() == lastUrl &&
+                    !lastForceHls && !lastUrl.contains(".m3u8")
+            },
+            bufferedMs = { loadControl?.lastBufferedMs ?: 0L },
+        )
         val dataSource = DefaultDataSource.Factory(context, reconnecting)
         val extractors = DefaultExtractorsFactory().setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES)
         val p = ExoPlayer.Builder(context, renderers)

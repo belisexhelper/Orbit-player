@@ -67,6 +67,14 @@ object PlaybackStats {
         event("No data ($reason) → new connection")
     }
 
+    @Volatile var loadErrors = 0; private set
+
+    /** ExoPlayer couldn't load (stuck or dropped connection) and tries again */
+    @Synchronized fun loadError(reason: String) {
+        loadErrors++
+        event("Load error ($reason) → trying again")
+    }
+
     @Synchronized fun reconnect(reason: String) {
         reconnects++
         event("Player reconnect: $reason")

@@ -688,7 +688,7 @@ private fun BoxScope.TvLivePanel(vm: AppViewModel, item: PlayItem, nn: NowNext?,
                 Text(
                     vm.displayName(ch) + (if (progStop > progStart) "  ·  ${Fmt.time(progStart)} – ${Fmt.time(progStop)}" else "") +
                         (if (catchup) "  ·  $behind min behind live" else "") +
-                        pb.bufferedAheadMs.let { if (it >= 0) "  ·  buffer %.1f s".format(it / 1000f) + (if (!catchup) " · start at %.0f s".format(pb.bufferTargetMs / 1000f) else "") else "" },
+                        pb.bufferedAheadMs.let { if (it >= 0) "  ·  buffer %.1f s".format(it / 1000f) + (if (!catchup) " · start at %.0f s".format(pb.bufferTargetMs / 1000f) else "") + " · ↓ %.1f Mbit/s".format(pb.downloadKbps() / 1000f) else "" },
                     color = c.textMuted, style = MaterialTheme.typography.bodyLarge, maxLines = 1,
                 )
             }
@@ -1143,8 +1143,10 @@ private fun BufferLabel(pb: com.orbitplayer.playback.PlaybackManager) {
     LaunchedEffect(pb) {
         while (true) {
             val ahead = pb.bufferedAheadMs
-            text = if (ahead < 0) "" else "buffer %.0f / %.0f s".format(ahead / 1000f, pb.vodTargetMs / 1000f)
-            delay(500)
+            val kbps = pb.downloadKbps()
+            text = if (ahead < 0) "" else "buffer %.0f / %.0f s · ↓ %.1f Mbit/s".format(ahead / 1000f, pb.vodTargetMs / 1000f, kbps / 1000f) +
+                (if (!pb.isLoadingData) " · not loading" else "")
+            delay(1000)
         }
     }
     if (text.isNotEmpty()) Text(text, color = Orbit.colors.textMuted, style = MaterialTheme.typography.bodySmall)

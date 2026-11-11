@@ -74,6 +74,37 @@ data class TrackOption(val groupIndex: Int, val trackIndex: Int, val label: Stri
 class PlaybackManager(private val context: Context, private val store: Store, private val repo: ContentRepository) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var built: ExoPlayer? = null
+
+    /** bytes arriving from the network (for the download speed shown next to the buffer) */
+    private val bytesIn = java.util.concurrent.atomic.AtomicLong()
+    private val byteCounter = object : androidx.media3.datasource.TransferListener {
+        override fun onTransferInitializing(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {}
+        override fun onTransferStart(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {}
+        override fun onBytesTransferred(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean, bytesTransferred: Int) {
+            bytesIn.addAndGet(bytesTransferred.toLong())
+        }
+        override fun onTransferEnd(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {}
+    }
+    private var rateBytes = 0L
+    private var rateAt = 0L
+    private var lastRateKbps = 0L
+
+    /** download speed in kbit/s over the last moment (call about once a second) */
+    fun downloadKbps(): Long {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val total = bytesIn.get()
+        if (rateAt == 0L) { rateAt = now; rateBytes = total; return 0 }
+        val dt = now - rateAt
+        if (dt >= 900) {
+            lastRateKbps = (total - rateBytes) * 8 / dt
+            rateAt = now
+            rateBytes = total
+        }
+        return lastRateKbps
+    }
+
+    /** ExoPlayer is fetching data right now (false = it decided it has enough, or nothing can be loaded) */
+    val isLoadingData: Boolean get() = if (usingVlc) true else built?.isLoading == true
     /** the current item showed a picture already (buffering after that = a stall) */
     private var startedPlaying = false
 
@@ -202,9 +233,11 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
         // opens a new one at the exact place it stopped (instead of waiting up to 2 minutes while the buffer runs out)
         val http = OkHttpDataSource.Factory(Net.iptv.newBuilder().readTimeout(10, java.util.concurrent.TimeUnit.SECONDS).build())
             .setUserAgent(Net.USER_AGENT)
+            .setTransferListener(byteCounter)
         // live channel stream: a connection that sends nothing for 4 s counts as stalled and is replaced
         val liveHttp = OkHttpDataSource.Factory(Net.iptv.newBuilder().readTimeout(4, java.util.concurrent.TimeUnit.SECONDS).build())
             .setUserAgent(Net.USER_AGENT)
+            .setTransferListener(byteCounter)
         val reconnecting = ReconnectingDataSource.Factory(http, liveHttp) { uri ->
             settings.fastReconnect && _item.value?.isLive == true && uri.toString() == lastUrl &&
                 !lastForceHls && !lastUrl.contains(".m3u8")
@@ -223,6 +256,18 @@ class PlaybackManager(private val context: Context, private val store: Store, pr
             .setPreferredTextLanguage(s.subtitleLanguage)
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !s.subtitlesByDefault)
             .build()
+        // load errors (a stuck or dropped connection that ExoPlayer tries again) go to Diagnostics
+        p.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
+            override fun onLoadError(
+                eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                loadEventInfo: androidx.media3.exoplayer.source.LoadEventInfo,
+                mediaLoadData: androidx.media3.exoplayer.source.MediaLoadData,
+                error: java.io.IOException,
+                wasCanceled: Boolean,
+            ) {
+                PlaybackStats.loadError(error.cause?.javaClass?.simpleName ?: error.javaClass.simpleName)
+            }
+        })
         p.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 if (!usingVlc) onError(error)

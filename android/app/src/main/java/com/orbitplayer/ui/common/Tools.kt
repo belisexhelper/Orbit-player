@@ -443,8 +443,8 @@ private fun sessionItems(): List<DiagItem> {
         when { s.stalls == 0 -> if (watchedMin < 1) DiagStatus.INFO else DiagStatus.GOOD; s.stalls <= 2 -> DiagStatus.WARN; else -> DiagStatus.BAD },
     )
     out += DiagItem(
-        "Connections replaced / reconnects",
-        "${s.newConnections} / ${s.reconnects}",
+        "Connections replaced / reconnects / load errors",
+        "${s.newConnections} / ${s.reconnects} / ${s.loadErrors}",
         when { s.newConnections + s.reconnects == 0 -> if (watchedMin < 1) DiagStatus.INFO else DiagStatus.GOOD; s.reconnects == 0 -> DiagStatus.WARN; else -> DiagStatus.BAD },
     )
     if (s.learnedBuffer.isNotEmpty()) out += DiagItem(

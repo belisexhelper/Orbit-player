@@ -325,7 +325,7 @@ fun PlayerScreen(vm: AppViewModel, inPip: Boolean = false, onEnterPip: () -> Uni
                     delay(250)
                 }
             }
-            Text(bufText, Modifier.align(Alignment.Center).padding(top = 110.dp).background(Color(0x99101521), RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 4.dp),
+            if (pb.stalled && bufText.isNotEmpty()) Text(bufText, Modifier.align(Alignment.Center).padding(top = 110.dp).background(Color(0x99101521), RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 4.dp),
                 color = Color.White, style = MaterialTheme.typography.bodyMedium)
         }
         seekNote?.let { note ->
@@ -688,7 +688,7 @@ private fun BoxScope.TvLivePanel(vm: AppViewModel, item: PlayItem, nn: NowNext?,
                 Text(
                     vm.displayName(ch) + (if (progStop > progStart) "  ·  ${Fmt.time(progStart)} – ${Fmt.time(progStop)}" else "") +
                         (if (catchup) "  ·  $behind min behind live" else "") +
-                        pb.bufferedAheadMs.let { if (it >= 0) "  ·  buffer %.1f s".format(it / 1000f) + (if (!catchup) " · start at %.0f s".format(pb.bufferTargetMs / 1000f) else "") + " · ↓ %.1f Mbit/s".format(pb.downloadKbps() / 1000f) else "" },
+                        pb.bufferedAheadMs.let { if (it >= 0) "  ·  buffer %.1f s".format(it / 1000f) + (if (!catchup) " · start at %.0f s".format(pb.bufferTargetMs / 1000f) else " / %.0f s".format(pb.vodTargetMs / 1000f)) + " · ↓ %.1f Mbit/s".format(pb.downloadKbps() / 1000f) else "" },
                     color = c.textMuted, style = MaterialTheme.typography.bodyLarge, maxLines = 1,
                 )
             }
@@ -1091,6 +1091,7 @@ private fun PhoneControls(
                     nn.next?.let { n -> Text("  Next ${Fmt.time(n.start)} ${n.title}", color = Color(0xFFD5DCE8), style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.weight(1f)) }
                 }
             }
+            if (item.isLive) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { BufferLabel(pb) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 if (item.isLive) IconAction(Icons.AutoMirrored.Filled.List, "Channels", tint = Color.White) { onChannels() }
                 IconAction(Icons.Filled.Audiotrack, "Audio", tint = Color.White) { onPicker(Picker.Audio) }
@@ -1144,8 +1145,12 @@ private fun BufferLabel(pb: com.orbitplayer.playback.PlaybackManager) {
         while (true) {
             val ahead = pb.bufferedAheadMs
             val kbps = pb.downloadKbps()
-            text = if (ahead < 0) "" else "buffer %.0f / %.0f s · ↓ %.1f Mbit/s".format(ahead / 1000f, pb.vodTargetMs / 1000f, kbps / 1000f) +
-                (if (!pb.isLoadingData) " · not loading" else "")
+            text = when {
+                ahead < 0 -> ""
+                pb.item.value?.isLive == true -> "buffer %.1f s · start at %.0f s · ↓ %.1f Mbit/s".format(ahead / 1000f, pb.bufferTargetMs / 1000f, kbps / 1000f)
+                else -> "buffer %.0f / %.0f s · ↓ %.1f Mbit/s".format(ahead / 1000f, pb.vodTargetMs / 1000f, kbps / 1000f) +
+                    (if (!pb.isLoadingData) " · not loading" else "")
+            }
             delay(1000)
         }
     }

@@ -31,6 +31,8 @@ import java.util.concurrent.ConcurrentHashMap
 class OrbitLoadControl(
     private val settings: () -> AppSettings,
     private val isLive: () -> Boolean,
+    /** catch-up (going back in time on a channel): part of Live TV, so it follows the Live TV buffer */
+    private val isCatchup: () -> Boolean = { false },
     /** the server of the current stream (what is learned is kept per server) */
     private val serverKey: () -> String,
 ) : DefaultLoadControl(
@@ -62,6 +64,10 @@ class OrbitLoadControl(
     val liveTargetMs: Long
         get() = (settings().liveBufferMs + learnedExtraMs).coerceAtMost(MAX_LIVE_CUSHION_MS)
 
+    /** movies & series: the Movies & series buffer; catch-up: the Live TV buffer (with Auto buffer) */
+    val aheadTargetMs: Long
+        get() = if (isCatchup()) liveTargetMs else settings().vodBufferMs.toLong()
+
     /** extra seconds learned for the current server (0 = none, or Auto buffer is off) */
     val learnedExtraMs: Long get() = if (settings().autoLiveBuffer) extraMs[serverKey()] ?: 0L else 0L
 
@@ -71,7 +77,7 @@ class OrbitLoadControl(
             stallStartedAt = 0L
             // movies: start fast; after a stall collect the Movies & series buffer before going on, so a slow
             // connection plays a long while between stalls (if memory fills up first, ExoPlayer goes on by itself)
-            val needMs = if (parameters.rebuffering) settings().vodBufferMs.toLong() else 2_500L
+            val needMs = if (parameters.rebuffering) aheadTargetMs else 2_500L
             currentNeedMs = needMs
             return bufferedUs >= needMs * 1000L
         }
@@ -98,7 +104,7 @@ class OrbitLoadControl(
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
         val more = super.shouldContinueLoading(parameters) // keeps the memory limit
         if (isLive()) return more
-        return more && parameters.bufferedDurationUs < settings().vodBufferMs * 1000L
+        return more && parameters.bufferedDurationUs < aheadTargetMs * 1000L
     }
 
     /** a new stream starts: a stall of the previous one doesn't count */

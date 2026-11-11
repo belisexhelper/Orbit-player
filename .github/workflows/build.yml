@@ -65,7 +65,16 @@ jobs:
           path: android/out/*.apk
           if-no-files-found: error
 
+      # A build that waited in the queue while a newer commit was pushed must not cover the newer one
+      - name: Is this the newest commit?
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" -q .sha)
+          if [ "$HEAD_SHA" = "$GITHUB_SHA" ]; then echo "NEWEST=true" >> "$GITHUB_ENV"; else echo "NEWEST=false" >> "$GITHUB_ENV"; echo "Not the newest commit ($HEAD_SHA): not published"; fi
+
       - name: Publish latest build
+        if: env.NEWEST == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -90,6 +99,7 @@ jobs:
       # Backup source for updates: the same APK on the "apk" branch, served by raw.githubusercontent.com
       # (another GitHub network than release downloads, which sometimes answer 504). One commit, force-pushed.
       - name: Backup copy for updates
+        if: env.NEWEST == 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}

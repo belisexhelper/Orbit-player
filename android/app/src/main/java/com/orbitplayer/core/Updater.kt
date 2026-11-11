@@ -125,7 +125,7 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                     url = a.optString("browser_download_url"),
                     size = a.optLong("size"),
                     notes = o.optString("body").trim(),
-                    date = o.optString("published_at").take(10),
+                    date = a.optString("updated_at").ifBlank { o.optString("published_at") }.take(10),
                 )
             }
             decide(release ?: error("The release has no APK"))

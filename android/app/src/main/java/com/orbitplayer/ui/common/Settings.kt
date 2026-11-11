@@ -344,6 +344,11 @@ fun SectionContent(vm: AppViewModel, id: String) {
             "about" -> {
                 item { UpdateCard(vm) }
                 item { ToggleRow("Check for updates automatically", s.autoUpdateCheck, "At start-up, at most twice a day") { v -> set { it.copy(autoUpdateCheck = v) } } }
+                item {
+                    var external by remember { mutableStateOf(false) }
+                    SettingRow("External download", subtitle = "When this device can't install updates from the app: download with a browser or a phone") { external = true }
+                    if (external) ExternalDownloadDialog(onFail = { vm.toast(it) }) { external = false }
+                }
                 item { AboutText(tv) }
             }
         }
@@ -364,7 +369,6 @@ private fun AboutText(tv: Boolean) {
 @Composable
 private fun UpdateCard(vm: AppViewModel) {
     val c = Orbit.colors
-    var externalDownload by remember { mutableStateOf(false) }
     val updater = vm.app.updater
     val state by updater.state.collectAsState()
     val context = LocalContext.current
@@ -429,11 +433,8 @@ private fun UpdateCard(vm: AppViewModel) {
                 Updater.State.Checking -> OrbitButton("Checking…", enabled = false, focusRequester = first) {}
                 else -> OrbitButton("Check for updates", icon = Icons.Filled.Refresh, primary = true, focusRequester = first) { scope.launch { updater.check() } }
             }
-            // devices that don't let apps install updates: download with a browser or the Downloader app
-            OrbitButton("External download", icon = Icons.Filled.OpenInBrowser) { externalDownload = true }
         }
     }
-    if (externalDownload) ExternalDownloadDialog(onFail = { vm.toast(it) }) { externalDownload = false }
 }
 
 private const val EXTERNAL_DOWNLOAD = "https://tiny.cc/orbitplayer"

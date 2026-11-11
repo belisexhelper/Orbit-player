@@ -51,7 +51,11 @@ jobs:
 
       - name: Name files
         run: |
-          VERSION=$(grep -oP 'val appVersionName = "\K[^"]+' app/build.gradle.kts)
+          # same rule as app/build.gradle.kts: major.minor from there, patch = builds since its first build
+          MM=$(grep -oP 'val versionMajorMinor = "\K[^"]+' app/build.gradle.kts)
+          FIRST=$(grep -oP 'val versionFirstBuild = \K[0-9]+' app/build.gradle.kts)
+          PATCH=$(( VERSION_CODE - FIRST )); [ "$PATCH" -lt 0 ] && PATCH=0
+          VERSION="${MM}.${PATCH}"
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           mkdir -p out
           cp $(find app/build/outputs/apk/release -name "*.apk" | head -1) "out/orbit-player-${VERSION}-${VERSION_CODE}.apk"

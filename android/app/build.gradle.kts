@@ -9,9 +9,13 @@ plugins {
     alias(libs.plugins.roborazzi)
 }
 
-// Version: versionName is set here, versionCode comes from CI (build number)
-val appVersionName = "5.0.0" // major.minor.patch: big change . smaller feature . fix
+// Version major.minor.patch, versionCode = the build number from CI.
+//  - major: big changes, minor: smaller new features — both set here by hand (then versionFirstBuild = next build);
+//  - patch: counts up by itself with every build since this major.minor began (fixes and small things).
+val versionMajorMinor = "5.0"
+val versionFirstBuild = 81 // build number of x.y.0 for the major.minor above
 val appVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
+val appVersionName = "$versionMajorMinor.${(appVersionCode - versionFirstBuild).coerceAtLeast(0)}"
 
 // Release signing: from environment (GitHub Secrets) or keystore.properties
 val keystoreProps = Properties().apply {

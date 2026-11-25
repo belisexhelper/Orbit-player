@@ -43,6 +43,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.ClosedCaption
@@ -109,6 +110,7 @@ val SECTIONS = listOf(
     SettingsSection("subtitles", "Subtitles", Icons.Filled.ClosedCaption),
     SettingsSection("parental", "Parental control", Icons.Filled.FamilyRestroom),
     SettingsSection("startup", "Start-up", Icons.Filled.PowerSettingsNew, tvOnly = true),
+    SettingsSection("launcher", "Launcher & kiosk", Icons.Filled.Apps),
     SettingsSection("history", "Watch history", Icons.Filled.History),
     SettingsSection("backup", "Backup & restore", Icons.Filled.Backup),
     SettingsSection("tools", "Speed test & diagnostics", Icons.Filled.Build),
@@ -318,6 +320,24 @@ fun SectionContent(vm: AppViewModel, id: String) {
                 item { ToggleRow("Start on the last channel", s.startOnLastChannel, "Opening the app continues the channel you watched last") { v -> set { it.copy(startOnLastChannel = v) } } }
                 item { ToggleRow("Start with the device", s.autostartOnBoot, "Some devices don't allow apps to start on boot") { v -> set { it.copy(autostartOnBoot = v) } } }
                 item { ToggleRow("Ask before exiting", s.confirmExit) { v -> set { it.copy(confirmExit = v) } } }
+            }
+            "launcher" -> {
+                item {
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    val isHome = androidx.compose.runtime.remember { com.orbitplayer.core.Launcher.isDefaultHome(ctx) }
+                    SettingRow("Use as home screen", subtitle = if (isHome) "Orbit is the home screen now" else "Make Orbit the device's home screen (launcher)") {
+                        com.orbitplayer.core.Launcher.openHomeChooser(ctx)
+                    }
+                }
+                item {
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    SettingRow("Open launcher", subtitle = "Preview it and choose which apps show as tiles") {
+                        ctx.startActivity(android.content.Intent(ctx, com.orbitplayer.ui.LauncherActivity::class.java))
+                    }
+                }
+                item {
+                    ToggleRow("Kiosk mode", s.kioskMode, "Locks the device to the launcher. Full lock works on enrolled devices; for now the home button stays on the launcher.") { v -> set { it.copy(kioskMode = v) } }
+                }
             }
             "history" -> item { HistorySection(vm) }
             "backup" -> item { BackupSection(vm) }

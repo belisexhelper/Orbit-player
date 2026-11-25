@@ -12,8 +12,8 @@ plugins {
 // Version major.minor.patch, versionCode = the build number from CI.
 //  - major: big changes, minor: smaller new features — both set here by hand (then versionFirstBuild = next build);
 //  - patch: counts up by itself with every build since this major.minor began (fixes and small things).
-val versionMajorMinor = "5.0"
-val versionFirstBuild = 81 // build number of x.y.0 for the major.minor above
+val versionMajorMinor = "5.1"
+val versionFirstBuild = 85 // build number of x.y.0
 val appVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
 val appVersionName = "$versionMajorMinor.${(appVersionCode - versionFirstBuild).coerceAtLeast(0)}"
 

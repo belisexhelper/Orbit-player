@@ -48,6 +48,7 @@ data class AppSettings(
     val autostartOnBoot: Boolean = false,
     val autoUpdateCheck: Boolean = true,
     val confirmExit: Boolean = true,
+    val kioskMode: Boolean = false, // lock the device to the launcher (full lock on enrolled devices)
 ) {
     /** Movies & series: how far ahead the player loads */
     val vodBufferMs: Int
@@ -78,7 +79,7 @@ data class AppSettings(
         .put("subtitleSize", subtitleSize).put("subtitleBackground", subtitleBackground)
         .put("parentalPin", parentalPin).put("hideAdult", hideAdult).put("adultKeywords", adultKeywords)
         .put("playlistRefreshHours", playlistRefreshHours).put("epgRefreshHours", epgRefreshHours).put("epgKeepPastDays", epgPastDays)
-        .put("playLastChannelOnStart", startOnLastChannel).put("autostartOnBoot", autostartOnBoot).put("confirmExit", confirmExit).put("autoUpdateCheck", autoUpdateCheck)
+        .put("playLastChannelOnStart", startOnLastChannel).put("autostartOnBoot", autostartOnBoot).put("confirmExit", confirmExit).put("kioskMode", kioskMode).put("autoUpdateCheck", autoUpdateCheck)
 
     companion object {
         fun fromJson(o: JSONObject, defaults: AppSettings = AppSettings()): AppSettings = defaults.copy(
@@ -114,6 +115,7 @@ data class AppSettings(
             startOnLastChannel = o.optBoolean("playLastChannelOnStart", defaults.startOnLastChannel),
             autostartOnBoot = o.optBoolean("autostartOnBoot", defaults.autostartOnBoot),
             confirmExit = o.optBoolean("confirmExit", defaults.confirmExit),
+            kioskMode = o.optBoolean("kioskMode", defaults.kioskMode),
             autoUpdateCheck = o.optBoolean("autoUpdateCheck", defaults.autoUpdateCheck),
         )
     }

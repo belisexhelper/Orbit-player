@@ -362,6 +362,7 @@ private fun AboutText(tv: Boolean) {
                     Text("Orbit Player ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", color = Orbit.colors.text, style = MaterialTheme.typography.titleMedium)
                     Text("Orbit Player is a media player. It does not provide or include any channels, movies or other content. Add the playlist you received from your provider.", color = Orbit.colors.textMuted, style = MaterialTheme.typography.bodyMedium)
                     Text("Interface: ${if (tv) "TV (remote control)" else "Phone / tablet (touch)"}", color = Orbit.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                    com.orbitplayer.ui.components.DeviceIdBadge()
                 }
 }
 

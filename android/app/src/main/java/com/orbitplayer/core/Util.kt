@@ -36,6 +36,22 @@ object DeviceInfo {
         return !pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
     }
 
+    /**
+     * Stable, human-readable ID of this install (e.g. "A7KP-R2M9"), generated once and kept.
+     * Shown on the device so it can be matched to the management panel; no ambiguous characters.
+     */
+    fun deviceId(context: Context): String {
+        val sp = context.getSharedPreferences("orbit", Context.MODE_PRIVATE)
+        sp.getString("device_id", null)?.let { return it }
+        val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // no I, O, 0, 1
+        val r = java.security.SecureRandom()
+        val sb = StringBuilder()
+        repeat(8) { sb.append(alphabet[r.nextInt(alphabet.length)]) }
+        val id = sb.insert(4, '-').toString()
+        sp.edit().putString("device_id", id).apply()
+        return id
+    }
+
     fun freeStorageMb(context: Context): Long {
         val dir = context.getExternalFilesDir(null) ?: context.filesDir
         return runCatching { StatFs(dir.path).availableBytes / (1024 * 1024) }.getOrDefault(-1)

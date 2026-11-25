@@ -52,7 +52,9 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -382,6 +384,29 @@ fun Loading(text: String = "", modifier: Modifier = Modifier) {
 }
 
 @Composable
+/**
+ * The device's own ID, shown so it can be matched to the management panel.
+ * [big] = the large badge for the empty "no playlist" screen; otherwise a small line for the menu / About.
+ */
+@Composable
+fun DeviceIdBadge(big: Boolean = false, modifier: Modifier = Modifier) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val id = androidx.compose.runtime.remember { com.orbitplayer.core.DeviceInfo.deviceId(ctx) }
+    val c = Orbit.colors
+    if (big) {
+        Column(
+            modifier.clip(RoundedCornerShape(14.dp)).background(c.surface).padding(horizontal = 28.dp, vertical = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("DEVICE ID", color = c.textMuted, style = MaterialTheme.typography.labelLarge, letterSpacing = 3.sp)
+            Spacer(Modifier.height(6.dp))
+            Text(id, color = c.accent, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, letterSpacing = 4.sp, fontFamily = FontFamily.Monospace)
+        }
+    } else {
+        Text("ID  $id", modifier, color = c.textMuted, style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp)
+    }
+}
+
 fun EmptyState(title: String, text: String = "", modifier: Modifier = Modifier, action: (@Composable () -> Unit)? = null) {
     Column(modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, color = Orbit.colors.text)

@@ -2,6 +2,7 @@ package com.orbitplayer.ui.common
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -53,9 +54,13 @@ fun NoPlaylist(vm: AppViewModel) {
         "Add your first playlist",
         "Orbit Player is a player only and has no channels of its own. Add the Xtream Codes account or M3U address you got from your provider.",
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OrbitButton("Add playlist", icon = Icons.Filled.Add, primary = true, focusRequester = fr) { vm.open(Route.AddPlaylist()) }
-            OrbitButton("Restore backup") { vm.open(Route.SettingsSection("backup")) }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OrbitButton("Add playlist", icon = Icons.Filled.Add, primary = true, focusRequester = fr) { vm.open(Route.AddPlaylist()) }
+                OrbitButton("Restore backup") { vm.open(Route.SettingsSection("backup")) }
+            }
+            Spacer(Modifier.height(28.dp))
+            com.orbitplayer.ui.components.DeviceIdBadge(big = true)
         }
     }
     LaunchedEffect(Unit) {

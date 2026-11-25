@@ -344,6 +344,8 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                     }
                 }
             }
+            Spacer(Modifier.weight(1f))
+            if (railOpen) com.orbitplayer.ui.components.DeviceIdBadge(modifier = Modifier.padding(start = 14.dp, top = 8.dp))
         }
     }
 

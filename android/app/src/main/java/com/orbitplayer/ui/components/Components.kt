@@ -383,7 +383,6 @@ fun Loading(text: String = "", modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
 /**
  * The device's own ID, shown so it can be matched to the management panel.
  * [big] = the large badge for the empty "no playlist" screen; otherwise a small line for the menu / About.
@@ -407,6 +406,7 @@ fun DeviceIdBadge(big: Boolean = false, modifier: Modifier = Modifier) {
     }
 }
 
+@Composable
 fun EmptyState(title: String, text: String = "", modifier: Modifier = Modifier, action: (@Composable () -> Unit)? = null) {
     Column(modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, color = Orbit.colors.text)

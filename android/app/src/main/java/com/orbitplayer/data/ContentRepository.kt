@@ -142,6 +142,47 @@ class ContentRepository(private val context: Context, val db: AppDatabase, priva
         if (store.activePlaylistId == id) store.activePlaylistId = db.playlists().all().firstOrNull()?.id ?: ""
     }
 
+    /**
+     * Imports the playlists the management server pushes in the device config and keeps them in sync:
+     * adds new ones, updates changed ones, removes ones the server dropped. Returns true if anything
+     * changed (so the caller can trigger a content sync). Locally-added playlists are left untouched.
+     */
+    suspend fun applyServerPlaylists(arr: JSONArray?): Boolean = withContext(Dispatchers.IO) {
+        val sp = context.getSharedPreferences("orbit", Context.MODE_PRIVATE)
+        val map = runCatching { JSONObject(sp.getString("srv_playlists", "{}") ?: "{}") }.getOrDefault(JSONObject())
+        val seen = HashSet<String>()
+        var changed = false
+        if (arr != null) for (i in 0 until arr.length()) {
+            val pl = arr.optJSONObject(i) ?: continue
+            val sid = pl.optString("id")
+            if (sid.isBlank()) continue
+            seen.add(sid)
+            val input = if (pl.optString("type") == "xtream") PlaylistInput(
+                name = pl.optString("name"), type = "xtream",
+                server = pl.optString("url"), username = pl.optString("username"), password = pl.optString("password"),
+                epgUrl = pl.optString("epgUrl"),
+            ) else PlaylistInput(
+                name = pl.optString("name"), type = "m3u",
+                url = pl.optString("url"), epgUrl = pl.optString("epgUrl"),
+            )
+            val mapped = map.optString(sid, "")
+            val existingId = if (mapped.isNotBlank() && db.playlists().get(mapped) != null) mapped else null
+            runCatching {
+                val saved = savePlaylist(input, existingId = existingId)
+                map.put(sid, saved.id)
+                if (existingId == null) changed = true // a newly added list needs a content sync
+            }.onFailure { AppLog.w("Server playlist import failed: ${it.message}") }
+        }
+        // drop managed playlists the server no longer sends (but never the user's local ones)
+        for (sid in map.keys().asSequence().filterNot(seen::contains).toList()) {
+            val lid = map.optString(sid)
+            if (lid.isNotBlank()) runCatching { removePlaylist(lid); changed = true }
+            map.remove(sid)
+        }
+        sp.edit().putString("srv_playlists", map.toString()).apply()
+        changed
+    }
+
     private suspend fun clearContent(pid: String) {
         val c = db.content()
         c.clearChannels(pid)

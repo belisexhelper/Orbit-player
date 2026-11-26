@@ -1,6 +1,7 @@
 package com.orbitplayer.core
 
 import android.content.Context
+import com.orbitplayer.App
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -124,9 +125,13 @@ object DeviceAgent {
         c.launch(Dispatchers.IO) { applyConfig(ctx, ServerClient.getConfig(ctx)) }
     }
 
-    private fun applyConfig(c: Context, cfg: JSONObject?) {
+    private suspend fun applyConfig(c: Context, cfg: JSONObject?) {
         cfg ?: return
         Launcher.applyServerConfig(c, cfg.optJSONObject("launcher"))
+        // Playlists pushed from the panel (via the 9-digit connect / the user's profile).
+        val app = c.applicationContext as? App ?: return
+        val changed = runCatching { app.repo.applyServerPlaylists(cfg.optJSONArray("playlists")) }.getOrDefault(false)
+        if (changed) runCatching { app.repo.syncAll(force = false) }
     }
 
     /** Called by the UI as the user moves around, so the panel shows what's on screen. */

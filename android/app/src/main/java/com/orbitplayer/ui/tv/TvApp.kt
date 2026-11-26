@@ -345,7 +345,19 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
                 }
             }
             Spacer(Modifier.weight(1f))
-            if (railOpen) com.orbitplayer.ui.components.DeviceIdBadge(modifier = Modifier.padding(start = 14.dp, top = 8.dp))
+            // Show the ID only after the menu has finished opening, with a gentle fade, so it does not
+            // flash or jump while the rail is still expanding.
+            var showId by remember { mutableStateOf(false) }
+            LaunchedEffect(railOpen) {
+                if (railOpen) { kotlinx.coroutines.delay(280); showId = true } else showId = false
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = railOpen && showId,
+                enter = androidx.compose.animation.fadeIn(tween(220)),
+                exit = androidx.compose.animation.fadeOut(tween(90)),
+            ) {
+                com.orbitplayer.ui.components.DeviceIdBadge(modifier = Modifier.padding(start = 14.dp, top = 8.dp))
+            }
         }
     }
 

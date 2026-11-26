@@ -41,6 +41,13 @@ object Launcher {
      * Applies the launcher config the server sent (part of the device config). The tiles, the title and
      * the kiosk/boot options are all chosen in the panel — never on the device.
      */
+    /** Wipes all managed launcher state (used when the device is unpaired). */
+    fun clearConfig(c: Context) {
+        prefs(c).edit().remove("launcher_config").remove("launcher_title").remove("launcher_boot")
+            .remove("launcher_locked").putBoolean("launcher_enabled", false).apply()
+        setTiles(c, emptyList())
+    }
+
     fun applyServerConfig(c: Context, launcher: org.json.JSONObject?) {
         val e = prefs(c).edit()
         if (launcher == null) {

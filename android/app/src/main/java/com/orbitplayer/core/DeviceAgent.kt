@@ -22,6 +22,7 @@ object DeviceAgent {
     @Volatile private var started = false
     @Volatile private var ws: WebSocket? = null
     @Volatile private var scope: CoroutineScope? = null
+    @Volatile private var appContext: Context? = null
 
     /** What the device is doing now (shown in the panel): launcher | app | player | home */
     @Volatile var foreground: String = "home"
@@ -31,6 +32,7 @@ object DeviceAgent {
         if (started) return
         started = true
         val app = context.applicationContext
+        appContext = app
         scope = appScope
         appScope.launch(Dispatchers.IO) {
             while (isActive) {
@@ -44,8 +46,9 @@ object DeviceAgent {
                     connectWs(app)
                     while (isActive && ServerClient.isRegistered(app)) {
                         delay(60_000)
-                        ServerClient.heartbeat(app, statusJson(app))
+                        val hb = ServerClient.heartbeat(app, statusJson(app))
                         if (!ServerClient.isRegistered(app)) break // token dropped: re-register
+                        runHeartbeatCommands(app, hb) // fallback channel when the socket is down
                         if (ws == null) connectWs(app) // socket dropped: bring it back
                     }
                 } catch (e: CancellationException) {
@@ -85,16 +88,38 @@ object DeviceAgent {
         })
     }
 
+    /** A command arriving live over the socket: run it and report the result back over the socket. */
     private fun handleCommand(app: Context, msg: JSONObject, webSocket: WebSocket) {
         val command = msg.optJSONObject("command") ?: msg
         val type = command.optString("type").ifBlank { command.optString("cmd") }
-        when (type) {
-            "refresh_config", "config_changed" ->
-                scope?.launch(Dispatchers.IO) { applyConfig(app, ServerClient.getConfig(app)) }
-            // other commands (launch, reboot, update…) arrive in a later phase
-        }
         val id = command.optString("id")
-        if (id.isNotBlank()) webSocket.send(JSONObject().put("type", "command_result").put("id", id).put("ok", true).toString())
+        scope?.launch(Dispatchers.IO) {
+            val (ok, result) = Commands.execute(app, type, command.optJSONObject("payload") ?: JSONObject())
+            if (id.isNotBlank()) {
+                val out = JSONObject().put("type", "command_result").put("id", id).put("ok", ok)
+                if (result != null) out.put("result", result)
+                runCatching { webSocket.send(out.toString()) }
+            }
+        }
+    }
+
+    /** Commands returned in the heartbeat reply (used when the socket isn't connected). */
+    private fun runHeartbeatCommands(app: Context, hb: JSONObject?) {
+        val cmds = hb?.optJSONArray("commands") ?: return
+        for (i in 0 until cmds.length()) {
+            val command = cmds.optJSONObject(i) ?: continue
+            val type = command.optString("type")
+            val id = command.optString("id")
+            val (ok, result) = Commands.execute(app, type, command.optJSONObject("payload") ?: JSONObject())
+            if (id.isNotBlank()) ServerClient.reportCommandResult(app, id, ok, result)
+        }
+    }
+
+    /** Re-pull and apply the server config now (used by the reload_config command). */
+    fun refreshConfigNow() {
+        val c = scope ?: return
+        val ctx = appContext ?: return
+        c.launch(Dispatchers.IO) { applyConfig(ctx, ServerClient.getConfig(ctx)) }
     }
 
     private fun applyConfig(c: Context, cfg: JSONObject?) {

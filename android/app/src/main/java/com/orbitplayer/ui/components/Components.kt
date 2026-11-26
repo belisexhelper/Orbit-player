@@ -418,23 +418,18 @@ fun qrCode(text: String, size: Int): android.graphics.Bitmap? = runCatching {
 }.getOrNull()
 
 /**
- * Quick-connect block for the "no playlist" screen: asks the server for a fresh pairing code and
- * shows a QR the customer scans to attach a playlist on the site. Silent if the device can't reach
- * the server yet (only the Device ID stays visible).
+ * Quick-connect block for the "no playlist" screen: a QR the customer scans to open the connect page
+ * for this exact device. The link carries the device's own 9-digit ID, so no extra code is needed —
+ * scanning (or typing the ID on the site) lets them attach a playlist.
  */
 @Composable
 fun ConnectQr(modifier: Modifier = Modifier) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val c = Orbit.colors
-    // {code, formatted, linkUrl} fetched off the main thread; null while loading or if unavailable.
-    val info by androidx.compose.runtime.produceState<org.json.JSONObject?>(null) {
-        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            com.orbitplayer.core.ServerClient.pairingCode(ctx)
-        }
-    }
-    val link = info?.optString("linkUrl")?.takeIf { it.isNotBlank() } ?: return
+    val id = remember { com.orbitplayer.core.DeviceInfo.deviceId(ctx) }
+    val pretty = remember { com.orbitplayer.core.DeviceInfo.deviceIdPretty(ctx) }
+    val link = remember(id) { "${com.orbitplayer.core.ServerClient.baseUrl(ctx)}/link?code=$id" }
     val qr = remember(link) { qrCode(link, 420) }
-    val formatted = info?.optString("formatted")?.takeIf { it.isNotBlank() }
     Column(
         modifier.clip(RoundedCornerShape(14.dp)).background(c.surface).padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -447,10 +442,8 @@ fun ConnectQr(modifier: Modifier = Modifier) {
             Spacer(Modifier.height(12.dp))
         }
         Text("Scan to add a playlist", color = c.text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        if (formatted != null) {
-            Spacer(Modifier.height(4.dp))
-            Text("or use code $formatted", color = c.textMuted, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp)
-        }
+        Spacer(Modifier.height(4.dp))
+        Text("or enter ID $pretty", color = c.textMuted, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp)
     }
 }
 

@@ -146,6 +146,19 @@ object ServerClient {
         return "$base/api/device/ws?auth=$id.$t"
     }
 
+    /** Reports a command's outcome back to the panel over HTTP (used on the heartbeat fallback path). */
+    fun reportCommandResult(c: Context, id: String, ok: Boolean, result: JSONObject?) {
+        val auth = authHeader(c) ?: return
+        val body = JSONObject().put("ok", ok).apply { if (result != null) put("result", result) }
+        val req = Request.Builder().url("${baseUrl(c)}/api/device/commands/$id/result")
+            .addHeader("Authorization", auth)
+            .post(body.toString().toRequestBody(JSON)).build()
+        runCatching { Net.api.newCall(req).execute().close() }
+    }
+
+    /** Drops this device's management token so it is no longer the paired identity. */
+    fun unpair(c: Context) = clearAuth(c)
+
     private fun clearAuth(c: Context) =
         prefs(c).edit().remove("srv_device_id").remove("srv_token").apply()
 }

@@ -38,10 +38,14 @@ object DeviceAgent {
                     if (!ServerClient.ensureRegistered(app)) { delay(30_000); continue }
                     ServerClient.postInfo(app)
                     applyConfig(app, ServerClient.getConfig(app))
+                    // If the server forgot this device (e.g. its data was reset), the token was
+                    // dropped on a 401 above — fall back to the outer loop to register again.
+                    if (!ServerClient.isRegistered(app)) continue
                     connectWs(app)
-                    while (isActive) {
+                    while (isActive && ServerClient.isRegistered(app)) {
                         delay(60_000)
                         ServerClient.heartbeat(app, statusJson(app))
+                        if (!ServerClient.isRegistered(app)) break // token dropped: re-register
                         if (ws == null) connectWs(app) // socket dropped: bring it back
                     }
                 } catch (e: CancellationException) {

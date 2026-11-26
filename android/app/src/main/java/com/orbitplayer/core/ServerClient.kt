@@ -28,6 +28,10 @@ object ServerClient {
     private fun token(c: Context): String? = prefs(c).getString("srv_token", null)
     fun isRegistered(c: Context): Boolean = deviceId(c) != null && token(c) != null
 
+    /** Last connection result, shown in settings so a problem is visible: null = OK. */
+    @Volatile var lastError: String? = null
+        private set
+
     private fun authHeader(c: Context): String? {
         val id = deviceId(c) ?: return null
         val t = token(c) ?: return null
@@ -52,15 +56,16 @@ object ServerClient {
             .post(deviceInfoJson(c).toString().toRequestBody(JSON)).build()
         return runCatching {
             Net.api.newCall(req).execute().use { r ->
-                if (!r.isSuccessful) return false
-                val o = JSONObject(r.body?.string() ?: return false)
+                if (!r.isSuccessful) { lastError = "register HTTP ${r.code}"; return false }
+                val o = JSONObject(r.body?.string() ?: run { lastError = "register: empty body"; return false })
                 prefs(c).edit()
                     .putString("srv_device_id", o.getString("deviceId"))
                     .putString("srv_token", o.getString("token"))
                     .apply()
+                lastError = null
                 true
             }
-        }.getOrDefault(false)
+        }.getOrElse { lastError = it.message ?: it.javaClass.simpleName; false }
     }
 
     fun postInfo(c: Context) {
@@ -68,7 +73,7 @@ object ServerClient {
         val req = Request.Builder().url("${baseUrl(c)}/api/device/info")
             .addHeader("Authorization", auth)
             .post(deviceInfoJson(c).toString().toRequestBody(JSON)).build()
-        runCatching { Net.api.newCall(req).execute().close() }
+        runCatching { Net.api.newCall(req).execute().use { r -> if (r.code == 401) clearAuth(c) } }
     }
 
     fun getConfig(c: Context): JSONObject? {
@@ -94,7 +99,42 @@ object ServerClient {
             .addHeader("Authorization", auth)
             .post(body.toString().toRequestBody(JSON)).build()
         return runCatching {
-            Net.api.newCall(req).execute().use { r -> if (r.isSuccessful) JSONObject(r.body?.string() ?: "{}") else null }
+            Net.api.newCall(req).execute().use { r ->
+                if (r.code == 401) { clearAuth(c); return null }
+                if (r.isSuccessful) { lastError = null; JSONObject(r.body?.string() ?: "{}") } else null
+            }
+        }.getOrNull()
+    }
+
+    /**
+     * Asks the server for a fresh pairing code (8 digits) the customer can use on the site to attach
+     * a playlist to this device. Returns {code, formatted, expiresAt, linkUrl} or null.
+     */
+    fun pairingCode(c: Context): JSONObject? {
+        val auth = authHeader(c) ?: return null
+        val req = Request.Builder().url("${baseUrl(c)}/api/device/pairing-code")
+            .addHeader("Authorization", auth)
+            .post("{}".toRequestBody(JSON)).build()
+        return runCatching {
+            Net.api.newCall(req).execute().use { r ->
+                if (r.code == 401) { clearAuth(c); return null }
+                if (r.isSuccessful) JSONObject(r.body?.string() ?: return null) else null
+            }
+        }.getOrNull()
+    }
+
+    /** Redeems an activation code the customer was given; returns the new config or null on failure. */
+    fun activate(c: Context, code: String): JSONObject? {
+        val auth = authHeader(c) ?: return null
+        val body = JSONObject().put("code", code.trim())
+        val req = Request.Builder().url("${baseUrl(c)}/api/device/activate")
+            .addHeader("Authorization", auth)
+            .post(body.toString().toRequestBody(JSON)).build()
+        return runCatching {
+            Net.api.newCall(req).execute().use { r ->
+                if (r.code == 401) { clearAuth(c); return null }
+                if (r.isSuccessful) JSONObject(r.body?.string() ?: "{}") else null
+            }
         }.getOrNull()
     }
 

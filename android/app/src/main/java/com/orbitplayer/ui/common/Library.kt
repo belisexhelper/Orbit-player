@@ -60,6 +60,8 @@ fun NoPlaylist(vm: AppViewModel) {
                 OrbitButton("Restore backup") { vm.open(Route.SettingsSection("backup")) }
             }
             Spacer(Modifier.height(28.dp))
+            com.orbitplayer.ui.components.ConnectQr()
+            Spacer(Modifier.height(16.dp))
             com.orbitplayer.ui.components.DeviceIdBadge(big = true)
         }
     }

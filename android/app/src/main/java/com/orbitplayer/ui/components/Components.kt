@@ -45,6 +45,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -403,6 +404,53 @@ fun DeviceIdBadge(big: Boolean = false, modifier: Modifier = Modifier) {
         }
     } else {
         Text("ID  $id", modifier, color = c.textMuted, style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp)
+    }
+}
+
+/** Encodes [text] as a QR bitmap (black on white), or null if encoding fails. */
+fun qrCode(text: String, size: Int): android.graphics.Bitmap? = runCatching {
+    val m = com.google.zxing.qrcode.QRCodeWriter()
+        .encode(text, com.google.zxing.BarcodeFormat.QR_CODE, size, size, mapOf(com.google.zxing.EncodeHintType.MARGIN to 1))
+    val bmp = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+    for (x in 0 until size) for (y in 0 until size)
+        bmp.setPixel(x, y, if (m[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+    bmp
+}.getOrNull()
+
+/**
+ * Quick-connect block for the "no playlist" screen: asks the server for a fresh pairing code and
+ * shows a QR the customer scans to attach a playlist on the site. Silent if the device can't reach
+ * the server yet (only the Device ID stays visible).
+ */
+@Composable
+fun ConnectQr(modifier: Modifier = Modifier) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val c = Orbit.colors
+    // {code, formatted, linkUrl} fetched off the main thread; null while loading or if unavailable.
+    val info by androidx.compose.runtime.produceState<org.json.JSONObject?>(null) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.orbitplayer.core.ServerClient.pairingCode(ctx)
+        }
+    }
+    val link = info?.optString("linkUrl")?.takeIf { it.isNotBlank() } ?: return
+    val qr = remember(link) { qrCode(link, 420) }
+    val formatted = info?.optString("formatted")?.takeIf { it.isNotBlank() }
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp)).background(c.surface).padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (qr != null) {
+            androidx.compose.foundation.Image(
+                qr.asImageBitmap(), "QR code to add a playlist",
+                modifier = Modifier.size(180.dp).clip(RoundedCornerShape(8.dp)),
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+        Text("Scan to add a playlist", color = c.text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        if (formatted != null) {
+            Spacer(Modifier.height(4.dp))
+            Text("or use code $formatted", color = c.textMuted, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp)
+        }
     }
 }
 

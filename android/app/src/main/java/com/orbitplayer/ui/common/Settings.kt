@@ -337,12 +337,27 @@ fun SectionContent(vm: AppViewModel, id: String) {
                 }
                 item {
                     val ctx = androidx.compose.ui.platform.LocalContext.current
-                    val reg = androidx.compose.runtime.remember { com.orbitplayer.core.ServerClient.isRegistered(ctx) }
                     val id = androidx.compose.runtime.remember { com.orbitplayer.core.DeviceInfo.deviceId(ctx) }
+                    // Re-read on each (re)composition so the row reflects the live connection state.
+                    var reg by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.orbitplayer.core.ServerClient.isRegistered(ctx)) }
+                    var err by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.orbitplayer.core.ServerClient.lastError) }
+                    androidx.compose.runtime.LaunchedEffect(Unit) {
+                        while (true) {
+                            reg = com.orbitplayer.core.ServerClient.isRegistered(ctx)
+                            err = com.orbitplayer.core.ServerClient.lastError
+                            kotlinx.coroutines.delay(2000)
+                        }
+                    }
+                    val status = when {
+                        reg -> "Connected"
+                        err != null -> "Error"
+                        else -> "Connecting…"
+                    }
+                    val detail = if (!reg && err != null) " · last error: $err" else ""
                     SettingRow(
                         "Management",
-                        value = if (reg) "Connected" else "Connecting…",
-                        subtitle = "Server ${com.orbitplayer.core.ServerClient.baseUrl(ctx)} · Device ID $id · tiles and kiosk are set from the panel",
+                        value = status,
+                        subtitle = "Server ${com.orbitplayer.core.ServerClient.baseUrl(ctx)} · Device ID $id$detail · tiles and kiosk are set from the panel",
                     ) { }
                 }
             }

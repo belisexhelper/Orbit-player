@@ -37,20 +37,26 @@ object DeviceInfo {
     }
 
     /**
-     * Stable 10-digit ID of this install (e.g. "4820571963), generated once and kept.
-     * Shown on the device so it can be matched to the management panel.
+     * Stable 9-digit ID of this install (e.g. "512876721"), generated once and kept.
+     * Shown on the device (grouped as 512-876-721) so it can be matched to the management panel.
+     * Stored and sent to the server as raw digits; see [deviceIdPretty] for the on-screen form.
      */
     fun deviceId(context: Context): String {
         val sp = context.getSharedPreferences("orbit", Context.MODE_PRIVATE)
         val existing = sp.getString("device_id", null)
-        if (existing != null && existing.matches(Regex("\\d{10}"))) return existing // keep a valid one
+        if (existing != null && existing.matches(Regex("\\d{9}"))) return existing // keep a valid one
         val r = java.security.SecureRandom()
         val sb = StringBuilder()
-        sb.append(1 + r.nextInt(9)) // first digit 1-9, so it is always 10 digits
-        repeat(9) { sb.append(r.nextInt(10)) }
+        sb.append(1 + r.nextInt(9)) // first digit 1-9, so it is always 9 digits
+        repeat(8) { sb.append(r.nextInt(10)) }
         val id = sb.toString()
         sp.edit().putString("device_id", id).apply()
         return id
+    }
+
+    /** The device ID grouped for easy reading: 512-876-721. */
+    fun deviceIdPretty(context: Context): String = deviceId(context).let {
+        if (it.length == 9) "${it.substring(0, 3)}-${it.substring(3, 6)}-${it.substring(6, 9)}" else it
     }
 
     fun freeStorageMb(context: Context): Long {

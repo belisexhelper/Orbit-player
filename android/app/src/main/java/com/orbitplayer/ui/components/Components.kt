@@ -391,7 +391,7 @@ fun Loading(text: String = "", modifier: Modifier = Modifier) {
 @Composable
 fun DeviceIdBadge(big: Boolean = false, modifier: Modifier = Modifier) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val id = androidx.compose.runtime.remember { com.orbitplayer.core.DeviceInfo.deviceId(ctx) }
+    val id = androidx.compose.runtime.remember { com.orbitplayer.core.DeviceInfo.deviceIdPretty(ctx) }
     val c = Orbit.colors
     if (big) {
         Column(

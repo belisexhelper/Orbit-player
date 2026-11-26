@@ -337,7 +337,7 @@ fun SectionContent(vm: AppViewModel, id: String) {
                 }
                 item {
                     val ctx = androidx.compose.ui.platform.LocalContext.current
-                    val id = androidx.compose.runtime.remember { com.orbitplayer.core.DeviceInfo.deviceId(ctx) }
+                    val id = androidx.compose.runtime.remember { com.orbitplayer.core.DeviceInfo.deviceIdPretty(ctx) }
                     // Re-read on each (re)composition so the row reflects the live connection state.
                     var reg by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.orbitplayer.core.ServerClient.isRegistered(ctx)) }
                     var err by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.orbitplayer.core.ServerClient.lastError) }

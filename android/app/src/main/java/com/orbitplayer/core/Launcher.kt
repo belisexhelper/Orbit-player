@@ -30,10 +30,40 @@ object Launcher {
         prefs(c).edit().putString("launcher_tiles", arr.toString()).apply()
     }
 
-    fun toggleTile(c: Context, tile: AppTile) {
-        val cur = tiles(c).toMutableList()
-        if (cur.any { it.pkg == tile.pkg }) cur.removeAll { it.pkg == tile.pkg } else cur.add(tile)
-        setTiles(c, cur)
+    /** Title shown on the launcher home screen (from the panel's branding, else "Orbit"). */
+    fun title(c: Context): String =
+        prefs(c).getString("launcher_title", null)?.takeIf { it.isNotBlank() } ?: "Orbit"
+
+    fun bootTarget(c: Context): String = prefs(c).getString("launcher_boot", "") ?: ""
+    fun enabled(c: Context): Boolean = prefs(c).getBoolean("launcher_enabled", false)
+
+    /**
+     * Applies the launcher config the server sent (part of the device config). The tiles, the title and
+     * the kiosk/boot options are all chosen in the panel — never on the device.
+     */
+    fun applyServerConfig(c: Context, launcher: org.json.JSONObject?) {
+        val e = prefs(c).edit()
+        if (launcher == null) {
+            // no launcher profile assigned to this device: clear managed tiles
+            e.remove("launcher_config").remove("launcher_title").remove("launcher_boot")
+                .putBoolean("launcher_enabled", false).apply()
+            setTiles(c, emptyList())
+            return
+        }
+        e.putString("launcher_config", launcher.toString())
+            .putBoolean("launcher_enabled", launcher.optBoolean("enabled", false))
+            .putBoolean("launcher_locked", launcher.optBoolean("locked", false))
+            .putString("launcher_boot", launcher.optString("bootTarget", ""))
+            .putString("launcher_title", launcher.optJSONObject("branding")?.optString("title") ?: "")
+            .apply()
+        val apps = launcher.optJSONArray("allowedApps")
+        val tiles = ArrayList<AppTile>()
+        if (apps != null) for (i in 0 until apps.length()) {
+            val o = apps.optJSONObject(i) ?: continue
+            val pkg = o.optString("package")
+            if (pkg.isNotBlank()) tiles.add(AppTile(pkg, o.optString("label")))
+        }
+        setTiles(c, tiles)
     }
 
     /** All launchable apps on the device (TV and phone launchers), without Orbit itself. */

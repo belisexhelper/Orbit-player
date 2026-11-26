@@ -68,18 +68,23 @@ class LauncherActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        com.orbitplayer.core.DeviceAgent.reportForeground("launcher")
+    }
 }
 
 @Composable
 private fun LauncherScreen(onOrbit: () -> Unit) {
     val c = Orbit.colors
     val ctx = LocalContext.current
-    var tiles by remember { mutableStateOf(Launcher.tiles(ctx)) }
-    var picking by remember { mutableStateOf(false) }
+    // tiles, title and everything else come from the panel (device config), never edited on the device
+    val tiles = Launcher.tiles(ctx)
 
     Box(Modifier.fillMaxSize().background(c.background)) {
         Column(Modifier.fillMaxSize().padding(40.dp)) {
-            Text("Orbit", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = c.text)
+            Text(Launcher.title(ctx), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = c.text)
             Spacer(Modifier.height(24.dp))
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(176.dp),
@@ -92,19 +97,10 @@ private fun LauncherScreen(onOrbit: () -> Unit) {
                 items(tiles, key = { it.pkg }) { t ->
                     LauncherTile(label = t.label, icon = { AppIcon(t.pkg, 52.dp) }, bg = c.surface, onClick = { Launcher.launch(ctx, t.pkg) })
                 }
-                item {
-                    LauncherTile(label = "Add apps", icon = { Icon(Icons.Filled.Add, null, Modifier.size(52.dp), tint = c.textMuted) }, bg = c.surface, dashed = true, onClick = { picking = true })
-                }
             }
         }
         DeviceIdBadge(modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp))
     }
-
-    if (picking) AppPicker(
-        selected = tiles.map { it.pkg }.toSet(),
-        onToggle = { Launcher.toggleTile(ctx, it); tiles = Launcher.tiles(ctx) },
-        onClose = { picking = false },
-    )
 }
 
 @Composable
@@ -127,37 +123,5 @@ private fun AppIcon(pkg: String, size: androidx.compose.ui.unit.Dp) {
         androidx.compose.foundation.Image(bmp, null, Modifier.size(size))
     } else {
         Icon(Icons.Filled.LiveTv, null, Modifier.size(size), tint = Orbit.colors.textMuted)
-    }
-}
-
-/** Full-screen list of installed apps; a check marks the ones shown as tiles. */
-@Composable
-private fun AppPicker(selected: Set<String>, onToggle: (AppTile) -> Unit, onClose: () -> Unit) {
-    val c = Orbit.colors
-    val ctx = LocalContext.current
-    val apps = remember { Launcher.installedApps(ctx) }
-    Box(Modifier.fillMaxSize().background(Color(0xE6000000)).padding(40.dp)) {
-        Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Choose apps for the launcher", Modifier.weight(1f), color = c.text, style = MaterialTheme.typography.titleLarge)
-                Focusable(onClick = onClose, color = c.surface) { _ -> Text("Done", Modifier.padding(horizontal = 20.dp, vertical = 10.dp), color = c.text) }
-            }
-            Spacer(Modifier.height(16.dp))
-            if (apps.isEmpty()) {
-                Text("No other apps found on this device.", color = c.textMuted, style = MaterialTheme.typography.bodyLarge)
-            } else LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-                listItems(apps, key = { it.pkg }) { app ->
-                    val on = app.pkg in selected
-                    Focusable(onClick = { onToggle(app) }, modifier = Modifier.fillMaxWidth(), color = c.surface) { _ ->
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            AppIcon(app.pkg, 32.dp)
-                            Spacer(Modifier.size(14.dp))
-                            Text(app.label, Modifier.weight(1f), color = c.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (on) Icon(Icons.Filled.Check, "Shown", tint = c.accent) else Text("", color = c.textMuted)
-                        }
-                    }
-                }
-            }
-        }
     }
 }

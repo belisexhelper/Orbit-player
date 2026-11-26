@@ -43,6 +43,11 @@ class MainActivity : ComponentActivity() {
     private val inPip = mutableStateOf(false)
     private var isTv = false
 
+    override fun onResume() {
+        super.onResume()
+        com.orbitplayer.core.DeviceAgent.reportForeground("app")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         isTv = DeviceInfo.isTv(this)

@@ -336,7 +336,14 @@ fun SectionContent(vm: AppViewModel, id: String) {
                     }
                 }
                 item {
-                    ToggleRow("Kiosk mode", s.kioskMode, "Locks the device to the launcher. Full lock works on enrolled devices; for now the home button stays on the launcher.") { v -> set { it.copy(kioskMode = v) } }
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    val reg = androidx.compose.runtime.remember { com.orbitplayer.core.ServerClient.isRegistered(ctx) }
+                    val id = androidx.compose.runtime.remember { com.orbitplayer.core.DeviceInfo.deviceId(ctx) }
+                    SettingRow(
+                        "Management",
+                        value = if (reg) "Connected" else "Connecting…",
+                        subtitle = "Server ${com.orbitplayer.core.ServerClient.baseUrl(ctx)} · Device ID $id · tiles and kiosk are set from the panel",
+                    ) { }
                 }
             }
             "history" -> item { HistorySection(vm) }

@@ -37,17 +37,18 @@ object DeviceInfo {
     }
 
     /**
-     * Stable, human-readable ID of this install (e.g. "A7KP-R2M9"), generated once and kept.
-     * Shown on the device so it can be matched to the management panel; no ambiguous characters.
+     * Stable 10-digit ID of this install (e.g. "4820571963), generated once and kept.
+     * Shown on the device so it can be matched to the management panel.
      */
     fun deviceId(context: Context): String {
         val sp = context.getSharedPreferences("orbit", Context.MODE_PRIVATE)
-        sp.getString("device_id", null)?.let { return it }
-        val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // no I, O, 0, 1
+        val existing = sp.getString("device_id", null)
+        if (existing != null && existing.matches(Regex("\\d{10}"))) return existing // keep a valid one
         val r = java.security.SecureRandom()
         val sb = StringBuilder()
-        repeat(8) { sb.append(alphabet[r.nextInt(alphabet.length)]) }
-        val id = sb.insert(4, '-').toString()
+        sb.append(1 + r.nextInt(9)) // first digit 1-9, so it is always 10 digits
+        repeat(9) { sb.append(r.nextInt(10)) }
+        val id = sb.toString()
         sp.edit().putString("device_id", id).apply()
         return id
     }

@@ -36,6 +36,7 @@ object ServerClient {
 
     private fun deviceInfoJson(c: Context): JSONObject = JSONObject()
         .put("flavor", "pro")
+        .put("code", DeviceInfo.deviceId(c)) // the 10-digit ID shown on the device
         .put("isTv", DeviceInfo.isTv(c))
         .put("manufacturer", Build.MANUFACTURER ?: "")
         .put("model", Build.MODEL ?: "")

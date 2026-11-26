@@ -67,6 +67,23 @@ object Commands {
                     true to msg("Kiosk privremeno isključen na $mins min")
                 }
 
+                "install_app" -> {
+                    val url = payload.optString("url")
+                    if (url.isBlank()) false to msg("Nedostaje link APK-a")
+                    else {
+                        (app as? App)?.appScope?.launch(Dispatchers.IO) {
+                            AppInstaller.download(app, url)?.let { AppInstaller.install(app, it) }
+                        }
+                        true to msg("Preuzimanje i instalacija su pokrenuti")
+                    }
+                }
+
+                "uninstall_app" -> {
+                    val pkg = payload.optString("package")
+                    if (pkg.isBlank()) false to msg("Nedostaje naziv paketa")
+                    else AppInstaller.uninstall(app, pkg) to JSONObject().put("package", pkg)
+                }
+
                 "unpair" -> { unpair(app); true to null }
 
                 else -> false to msg("Nepoznata komanda: $type")

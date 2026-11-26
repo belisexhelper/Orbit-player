@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         com.orbitplayer.core.DeviceAgent.reportForeground("app")
+        com.orbitplayer.core.Kiosk.apply(this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

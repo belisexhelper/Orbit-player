@@ -57,9 +57,15 @@ object Commands {
 
                 "run_diagnostics" -> true to diagnostics(app)
 
-                "reboot" -> false to msg("Restart uređaja zahteva Device Owner (kiosk nivo 3) — biće podržano u kasnijoj fazi")
+                "reboot" ->
+                    if (Kiosk.reboot(app)) true to null
+                    else false to msg("Restart uređaja zahteva Device Owner (kiosk nivo 3)")
 
-                "exit_kiosk" -> true to msg("Kiosk još nije aktivan na ovom uređaju")
+                "exit_kiosk" -> {
+                    val mins = payload.optInt("minutes", 10).coerceIn(1, 120)
+                    Kiosk.pause(mins)
+                    true to msg("Kiosk privremeno isključen na $mins min")
+                }
 
                 "unpair" -> { unpair(app); true to null }
 
@@ -126,6 +132,8 @@ object Commands {
             .put("freeMemMb", freeMem)
             .put("isDefaultHome", Launcher.isDefaultHome(app))
             .put("launcherEnabled", Launcher.enabled(app))
+            .put("kioskLevel", Kiosk.level(app))
+            .put("isDeviceOwner", Kiosk.isDeviceOwner(app))
             .put("deviceId", DeviceInfo.deviceId(app))
     }
 

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Policies Orbit uses when it is set as Device Owner (kiosk tier 3). -->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <wipe-data />
+        <force-lock />
+        <disable-keyguard-features />
+        <set-global-proxy />
+    </uses-policies>
+</device-admin>

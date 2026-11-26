@@ -65,6 +65,8 @@ object DeviceAgent {
         .put("code", DeviceInfo.deviceId(c))
         .put("foreground", foreground)
         .put("home", Launcher.isDefaultHome(c))
+        .put("launcherLevel", Kiosk.statusLevel(c))
+        .put("deviceOwner", Kiosk.isDeviceOwner(c))
 
     private fun connectWs(app: Context) {
         val url = ServerClient.wsUrl(app) ?: return

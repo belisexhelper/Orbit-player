@@ -360,6 +360,14 @@ fun SectionContent(vm: AppViewModel, id: String) {
                         subtitle = "Server ${com.orbitplayer.core.ServerClient.baseUrl(ctx)} · Device ID $id$detail · tiles and kiosk are set from the panel",
                     ) { }
                 }
+                item {
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    val owner = androidx.compose.runtime.remember { com.orbitplayer.core.Kiosk.isDeviceOwner(ctx) }
+                    val label = androidx.compose.runtime.remember { com.orbitplayer.core.Kiosk.levelLabel(ctx) }
+                    val sub = if (owner) "Full kiosk available"
+                    else "For full kiosk (level 3), run on a factory-fresh device:\n${com.orbitplayer.core.Kiosk.setupCommand(ctx)}"
+                    SettingRow("Kiosk level", value = label, subtitle = sub) { }
+                }
             }
             "history" -> item { HistorySection(vm) }
             "backup" -> item { BackupSection(vm) }

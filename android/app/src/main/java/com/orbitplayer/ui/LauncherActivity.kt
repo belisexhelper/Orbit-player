@@ -72,6 +72,8 @@ class LauncherActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         com.orbitplayer.core.DeviceAgent.reportForeground("launcher")
+        // Enforce kiosk (lock task / pinning) to the degree the device allows.
+        com.orbitplayer.core.Kiosk.apply(this)
     }
 }
 

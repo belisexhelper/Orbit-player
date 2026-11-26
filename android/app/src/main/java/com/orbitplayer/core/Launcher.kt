@@ -41,20 +41,21 @@ object Launcher {
      * Applies the launcher config the server sent (part of the device config). The tiles, the title and
      * the kiosk/boot options are all chosen in the panel — never on the device.
      */
-    /** Wipes all managed launcher state (used when the device is unpaired). */
+    /** Wipes all managed launcher + kiosk state (used when the device is unpaired or has no profile). */
     fun clearConfig(c: Context) {
-        prefs(c).edit().remove("launcher_config").remove("launcher_title").remove("launcher_boot")
-            .remove("launcher_locked").putBoolean("launcher_enabled", false).apply()
+        prefs(c).edit()
+            .remove("launcher_config").remove("launcher_title").remove("launcher_boot").remove("launcher_locked")
+            .remove("kiosk_level").remove("kiosk_hide_status").remove("kiosk_block_settings")
+            .remove("kiosk_block_install").remove("kiosk_exit_pin_hash").remove("launcher_show_settings_tile")
+            .putBoolean("launcher_enabled", false).apply()
         setTiles(c, emptyList())
     }
 
     fun applyServerConfig(c: Context, launcher: org.json.JSONObject?) {
         val e = prefs(c).edit()
         if (launcher == null) {
-            // no launcher profile assigned to this device: clear managed tiles
-            e.remove("launcher_config").remove("launcher_title").remove("launcher_boot")
-                .putBoolean("launcher_enabled", false).apply()
-            setTiles(c, emptyList())
+            // no launcher profile assigned to this device: clear managed tiles and kiosk
+            clearConfig(c)
             return
         }
         e.putString("launcher_config", launcher.toString())
@@ -62,7 +63,17 @@ object Launcher {
             .putBoolean("launcher_locked", launcher.optBoolean("locked", false))
             .putString("launcher_boot", launcher.optString("bootTarget", ""))
             .putString("launcher_title", launcher.optJSONObject("branding")?.optString("title") ?: "")
+            // kiosk settings (enforced by Kiosk, to the extent the device's level allows)
+            .putString("kiosk_level", launcher.optString("kioskLevel", "auto"))
+            .putBoolean("kiosk_hide_status", launcher.optBoolean("hideStatusBar", false))
+            .putBoolean("kiosk_block_settings", launcher.optBoolean("blockSettings", false))
+            .putBoolean("kiosk_block_install", launcher.optBoolean("blockInstallUninstall", false))
+            .putBoolean("launcher_show_settings_tile", launcher.optBoolean("showSystemSettingsTile", true))
             .apply()
+        // Store the exit-PIN hash on its own so a config without it doesn't wipe a set PIN.
+        val pinHash = launcher.optString("exitPinHash", "")
+        if (pinHash.isNotBlank()) prefs(c).edit().putString("kiosk_exit_pin_hash", pinHash).apply()
+        else prefs(c).edit().remove("kiosk_exit_pin_hash").apply()
         val apps = launcher.optJSONArray("allowedApps")
         val tiles = ArrayList<AppTile>()
         if (apps != null) for (i in 0 until apps.length()) {

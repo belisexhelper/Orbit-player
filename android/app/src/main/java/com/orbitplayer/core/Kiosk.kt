@@ -92,11 +92,17 @@ object Kiosk {
         val c = activity.applicationContext
         val dpm = dpm(c); val admin = admin(c)
         runCatching {
-            // Force Orbit as home so it can't be swapped out.
-            val filter = IntentFilter(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME); addCategory(Intent.CATEGORY_DEFAULT)
+            if (cfg.enabled) {
+                // Force Orbit as home so it can't be swapped out (the only way to become the launcher
+                // on Google TV, which blocks third-party launchers through normal settings).
+                val filter = IntentFilter(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME); addCategory(Intent.CATEGORY_DEFAULT)
+                }
+                dpm.addPersistentPreferredActivity(admin, filter, ComponentName(c, "com.orbitplayer.ui.LauncherActivity"))
+            } else {
+                // Launcher turned off in the panel: hand home back to the system launcher.
+                dpm.clearPackagePersistentPreferredActivities(admin, c.packageName)
             }
-            dpm.addPersistentPreferredActivity(admin, filter, ComponentName(c, "com.orbitplayer.ui.LauncherActivity"))
         }
         runCatching {
             val pkgs = (listOf(c.packageName) + Launcher.tiles(c).map { it.pkg }).distinct().toTypedArray()

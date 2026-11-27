@@ -10,6 +10,7 @@ import java.io.File
  * Keeps the app updated from the MANAGEMENT server (not GitHub), so the operator controls rollout
  * from the panel. Checks /api/device/update, downloads the APK with the device's auth, verifies the
  * SHA-256, then installs — silently when the device is Device Owner, otherwise via the system prompt.
+ * The server pulls the newest build from GitHub on its own, so this keeps the fleet up to date end to end.
  */
 object ServerUpdater {
     private const val CHECK_INTERVAL = 20L * 60 * 60 * 1000 // ~daily

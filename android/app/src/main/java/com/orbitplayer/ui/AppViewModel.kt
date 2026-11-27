@@ -243,6 +243,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun playChannel(ch: ChannelEntity, list: List<ChannelEntity> = groupChannels.value, fullscreen: Boolean = true) {
         val l = if (list.any { it.key == ch.key }) list else listOf(ch)
         playback.playQueue(l.map { liveItem(it) }, l.indexOfFirst { it.key == ch.key }.coerceAtLeast(0))
+        app.nowPlaying = displayName(ch)
         if (fullscreen) playerOpen.value = true
     }
 

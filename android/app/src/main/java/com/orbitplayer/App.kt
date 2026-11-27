@@ -16,6 +16,9 @@ import kotlinx.coroutines.SupervisorJob
 class App : Application(), coil.ImageLoaderFactory {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** Name of the channel currently being watched, reported to the panel ("Gleda" column). */
+    @Volatile var nowPlaying: String? = null
+
     lateinit var store: Store; private set
     lateinit var db: AppDatabase; private set
     lateinit var repo: ContentRepository; private set

@@ -45,8 +45,11 @@ class ScreenCaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Must call startForeground() right away on every path, or Android crashes the app
+        // (ForegroundServiceDidNotStartInTimeException).
+        runCatching { startForeground(NOTIF_ID, buildNotification()) }
+        instance = this
         if (intent?.action == ACTION_STOP) { stopAll(); return START_NOT_STICKY }
-        startForeground(NOTIF_ID, buildNotification())
 
         val code = intent?.getIntExtra("resultCode", 0) ?: 0
         val data = intent?.getParcelableExtra<Intent>("resultData")
@@ -142,6 +145,7 @@ class ScreenCaptureService : Service() {
     }
 
     private fun stopAll() {
+        instance = null
         running = false
         job?.cancel(); job = null
         runCatching { vdisplay?.release() }; vdisplay = null
@@ -174,15 +178,16 @@ class ScreenCaptureService : Service() {
         const val ACTION_STOP = "com.orbitplayer.SCREEN_STOP"
         private const val NOTIF_ID = 42
         private const val CHANNEL = "orbit_screen"
+        @Volatile private var instance: ScreenCaptureService? = null
 
         fun start(ctx: Context) {
             val i = Intent(ctx, ScreenConsentActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             runCatching { ctx.startActivity(i) }
         }
 
+        /** Stops the running capture directly if present; never starts a service just to stop it. */
         fun stop(ctx: Context) {
-            val i = Intent(ctx, ScreenCaptureService::class.java).setAction(ACTION_STOP)
-            runCatching { if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i) }
+            instance?.let { runCatching { it.stopAll() } }
         }
     }
 }

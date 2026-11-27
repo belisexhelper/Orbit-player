@@ -75,11 +75,19 @@ object DeviceAgent {
                 JSONObject(c.getSharedPreferences("orbit", Context.MODE_PRIVATE).getString("srv_playlists", "{}") ?: "{}")
             }.getOrNull()?.let { m -> m.keys().asSequence().map { m.optString(it) }.toHashSet() } ?: hashSetOf()
             for (p in app.repo.db.playlists().all()) {
-                val host = if (p.type == "xtream") p.server else runCatching { android.net.Uri.parse(p.url).host ?: "" }.getOrDefault("")
-                arr.put(
-                    JSONObject().put("name", p.name).put("type", p.type).put("host", host)
-                        .put("source", if (managed.contains(p.id)) "panel" else "local"),
-                )
+                val o = JSONObject()
+                    .put("name", p.name)
+                    .put("type", p.type)
+                    .put("source", if (managed.contains(p.id)) "panel" else "local")
+                    .put("epgUrl", p.epgUrl)
+                if (p.type == "xtream") {
+                    o.put("host", p.server).put("username", p.username)
+                        .put("expiresAt", p.expiresAt).put("status", p.accountStatus)
+                        .put("maxConnections", p.maxConnections)
+                } else {
+                    o.put("url", p.url).put("host", runCatching { android.net.Uri.parse(p.url).host ?: "" }.getOrDefault(""))
+                }
+                arr.put(o)
             }
         }
         return arr

@@ -31,8 +31,17 @@ object Launcher {
     }
 
     /** Title shown on the launcher home screen (from the panel's branding, else "Orbit"). */
-    fun title(c: Context): String =
-        prefs(c).getString("launcher_title", null)?.takeIf { it.isNotBlank() } ?: "Orbit"
+    /** The launcher title set in the panel; blank means "show no title". */
+    fun title(c: Context): String = prefs(c).getString("launcher_title", "") ?: ""
+
+    /** Tile/icon size multiplier from the panel (0.8 smaller … 1.3 larger). */
+    fun iconScale(c: Context): Float = prefs(c).getFloat("launcher_icon_scale", 1f).coerceIn(0.6f, 1.8f)
+
+    /** Accent color (ARGB) chosen in the panel, or null to use the theme's. */
+    fun accentColor(c: Context): Int? {
+        val hex = prefs(c).getString("launcher_accent", "")?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        return runCatching { android.graphics.Color.parseColor(if (hex.startsWith("#")) hex else "#$hex") }.getOrNull()
+    }
 
     fun bootTarget(c: Context): String = prefs(c).getString("launcher_boot", "") ?: ""
     fun enabled(c: Context): Boolean = prefs(c).getBoolean("launcher_enabled", false)
@@ -58,11 +67,14 @@ object Launcher {
             clearConfig(c)
             return
         }
+        val branding = launcher.optJSONObject("branding")
         e.putString("launcher_config", launcher.toString())
             .putBoolean("launcher_enabled", launcher.optBoolean("enabled", false))
             .putBoolean("launcher_locked", launcher.optBoolean("locked", false))
             .putString("launcher_boot", launcher.optString("bootTarget", ""))
-            .putString("launcher_title", launcher.optJSONObject("branding")?.optString("title") ?: "")
+            .putString("launcher_title", branding?.optString("title") ?: "")
+            .putString("launcher_accent", branding?.optString("accent") ?: "")
+            .putFloat("launcher_icon_scale", (branding?.optDouble("iconScale", 1.0) ?: 1.0).toFloat())
             // kiosk settings (enforced by Kiosk, to the extent the device's level allows)
             .putString("kiosk_level", launcher.optString("kioskLevel", "auto"))
             .putBoolean("kiosk_hide_status", launcher.optBoolean("hideStatusBar", false))

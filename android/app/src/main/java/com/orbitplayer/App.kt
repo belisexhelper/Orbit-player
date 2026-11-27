@@ -44,6 +44,7 @@ class App : Application(), coil.ImageLoaderFactory {
         updater = com.orbitplayer.core.Updater(this, appScope)
         appScope.launch { com.orbitplayer.data.LogoFinder.loadSaved(this@App) }
         // connect to the management server (register, pull config / launcher tiles, stay online)
+        com.orbitplayer.core.Banner.load(this)
         com.orbitplayer.core.DeviceAgent.start(this, appScope)
     }
 

@@ -36,6 +36,17 @@ object Commands {
                     true to null
                 }
 
+                "show_banner" -> {
+                    val text = payload.optString("text")
+                    val severity = payload.optString("severity", "info")
+                    // durationSec: 0/absent = until cleared; supports seconds up to many days
+                    val dur = payload.optLong("durationSec", 0)
+                    Banner.show(app, text, severity, dur)
+                    true to null
+                }
+
+                "clear_banner" -> { Banner.clear(app); true to null }
+
                 "open_app" -> {
                     val pkg = payload.optString("package")
                     val ok = pkg.isNotBlank() && launchOnMain(app, pkg)

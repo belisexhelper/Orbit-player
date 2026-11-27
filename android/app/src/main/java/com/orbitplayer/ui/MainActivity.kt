@@ -72,14 +72,16 @@ class MainActivity : ComponentActivity() {
             val settings by vm.settings.collectAsState()
             val playerOpen by vm.playerOpen.collectAsState()
             OrbitTheme(settings.theme, isTv, settings.fontScale) {
-                Box(Modifier.fillMaxSize().background(Orbit.colors.background)) {
-                    if (inPip.value) {
-                        PlayerScreen(vm, inPip = true)
-                    } else {
-                        if (isTv) TvApp(vm, onExit = { exitApp() }) else MobileApp(vm, onExit = { exitApp() })
-                        if (playerOpen) PlayerScreen(vm, inPip = false, onEnterPip = { enterPip() })
-                        com.orbitplayer.ui.components.MessageHost(vm.messages)
-                        crashText?.let { CrashReport(it) { crashText = null } }
+                com.orbitplayer.ui.components.BannerHost {
+                    Box(Modifier.fillMaxSize().background(Orbit.colors.background)) {
+                        if (inPip.value) {
+                            PlayerScreen(vm, inPip = true)
+                        } else {
+                            if (isTv) TvApp(vm, onExit = { exitApp() }) else MobileApp(vm, onExit = { exitApp() })
+                            if (playerOpen) PlayerScreen(vm, inPip = false, onEnterPip = { enterPip() })
+                            com.orbitplayer.ui.components.MessageHost(vm.messages)
+                            crashText?.let { CrashReport(it) { crashText = null } }
+                        }
                     }
                 }
             }

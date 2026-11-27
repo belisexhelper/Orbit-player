@@ -64,7 +64,9 @@ class LauncherActivity : ComponentActivity() {
         }.getOrDefault("slate")
         setContent {
             OrbitTheme(theme, isTv) {
-                LauncherScreen(onOrbit = { startActivity(Intent(this, MainActivity::class.java)) })
+                com.orbitplayer.ui.components.BannerHost {
+                    LauncherScreen(onOrbit = { startActivity(Intent(this, MainActivity::class.java)) })
+                }
             }
         }
     }
@@ -81,23 +83,40 @@ class LauncherActivity : ComponentActivity() {
 private fun LauncherScreen(onOrbit: () -> Unit) {
     val c = Orbit.colors
     val ctx = LocalContext.current
-    // tiles, title and everything else come from the panel (device config), never edited on the device
+    // tiles, title and look all come from the panel (device config), never edited on the device
     val tiles = Launcher.tiles(ctx)
+    val title = Launcher.title(ctx)
+    val scale = Launcher.iconScale(ctx)
+    val accent = Launcher.accentColor(ctx)?.let { Color(it) } ?: c.accent
+    val tileW = (150 * scale).dp
+    val iconSize = (46 * scale).dp
 
-    Box(Modifier.fillMaxSize().background(c.background)) {
-        Column(Modifier.fillMaxSize().padding(40.dp)) {
-            Text(Launcher.title(ctx), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = c.text)
-            Spacer(Modifier.height(24.dp))
+    // A calm dark backdrop that reads well on any TV, independent of the app theme.
+    val bg = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF0E1116), Color(0xFF151A22)))
+    Box(Modifier.fillMaxSize().background(bg)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 40.dp)) {
+            if (title.isNotBlank()) {
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = c.text)
+                Spacer(Modifier.height(22.dp))
+            }
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(176.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                columns = GridCells.Adaptive(tileW),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 item {
-                    LauncherTile(label = "Live TV", icon = { Icon(Icons.Filled.LiveTv, null, Modifier.size(52.dp), tint = c.onAccent) }, bg = c.accent, onClick = onOrbit)
+                    LauncherTile(
+                        label = "Live TV",
+                        icon = { Icon(Icons.Filled.LiveTv, null, Modifier.size(iconSize), tint = accent) },
+                        onClick = onOrbit,
+                    )
                 }
                 items(tiles, key = { it.pkg }) { t ->
-                    LauncherTile(label = t.label, icon = { AppIcon(t.pkg, 52.dp) }, bg = c.surface, onClick = { Launcher.launch(ctx, t.pkg) })
+                    LauncherTile(
+                        label = t.label,
+                        icon = { AppIcon(t.pkg, t.label, iconSize) },
+                        onClick = { Launcher.launch(ctx, t.pkg) },
+                    )
                 }
             }
         }
@@ -106,24 +125,36 @@ private fun LauncherScreen(onOrbit: () -> Unit) {
 }
 
 @Composable
-private fun LauncherTile(label: String, icon: @Composable () -> Unit, bg: Color, dashed: Boolean = false, onClick: () -> Unit) {
-    val c = Orbit.colors
-    Focusable(onClick = onClick, modifier = Modifier.fillMaxWidth().aspectRatio(1.3f), color = bg, scaleOnFocus = 1.06f) { _ ->
-        Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+private fun LauncherTile(label: String, icon: @Composable () -> Unit, onClick: () -> Unit) {
+    // Soft raised card; the focused one gets an accent ring (handled by Focusable) and a slight lift.
+    val base = Color(0xFF1C222C)
+    Focusable(onClick = onClick, modifier = Modifier.fillMaxWidth().aspectRatio(1.25f), color = base, scaleOnFocus = 1.04f) { _ ->
+        Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
             icon()
             Spacer(Modifier.height(14.dp))
-            Text(label, color = c.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, color = Color(0xFFE7ECF3), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
-private fun AppIcon(pkg: String, size: androidx.compose.ui.unit.Dp) {
+private fun AppIcon(pkg: String, label: String, size: androidx.compose.ui.unit.Dp) {
     val ctx = LocalContext.current
-    val bmp = remember(pkg) { Launcher.appIcon(ctx, pkg)?.toBitmap(96, 96)?.asImageBitmap() }
+    val px = with(androidx.compose.ui.platform.LocalDensity.current) { size.toPx().toInt().coerceIn(48, 192) }
+    val bmp = remember(pkg, px) { Launcher.appIcon(ctx, pkg)?.toBitmap(px, px)?.asImageBitmap() }
     if (bmp != null) {
-        androidx.compose.foundation.Image(bmp, null, Modifier.size(size))
+        androidx.compose.foundation.Image(bmp, null, Modifier.size(size).clip(RoundedCornerShape(10.dp)))
     } else {
-        Icon(Icons.Filled.LiveTv, null, Modifier.size(size), tint = Orbit.colors.textMuted)
+        // Neutral placeholder with the app's first letter, instead of a blank white square.
+        Box(
+            Modifier.size(size).clip(RoundedCornerShape(10.dp)).background(Color(0xFF2A313C)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label.trim().take(1).uppercase().ifBlank { "?" },
+                color = Color(0xFF9FB0C3), fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleLarge,
+            )
+        }
     }
 }

@@ -159,7 +159,8 @@ class ContentRepository(private val context: Context, val db: AppDatabase, priva
             seen.add(sid)
             val input = if (pl.optString("type") == "xtream") PlaylistInput(
                 name = pl.optString("name"), type = "xtream",
-                server = pl.optString("url"), username = pl.optString("username"), password = pl.optString("password"),
+                // the server sends the xtream host in "server" (and "url" only for m3u)
+                server = pl.optString("server"), username = pl.optString("username"), password = pl.optString("password"),
                 epgUrl = pl.optString("epgUrl"),
             ) else PlaylistInput(
                 name = pl.optString("name"), type = "m3u",

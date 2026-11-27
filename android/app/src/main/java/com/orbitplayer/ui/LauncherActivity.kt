@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -106,14 +107,14 @@ private fun LauncherScreen(onOrbit: () -> Unit) {
             ) {
                 item {
                     LauncherTile(
-                        label = "Live TV",
+                        label = "Live TV", accent = accent,
                         icon = { Icon(Icons.Filled.LiveTv, null, Modifier.size(iconSize), tint = accent) },
                         onClick = onOrbit,
                     )
                 }
                 items(tiles, key = { it.pkg }) { t ->
                     LauncherTile(
-                        label = t.label,
+                        label = t.label, accent = accent,
                         icon = { AppIcon(t.pkg, t.label, iconSize) },
                         onClick = { Launcher.launch(ctx, t.pkg) },
                     )
@@ -125,14 +126,28 @@ private fun LauncherScreen(onOrbit: () -> Unit) {
 }
 
 @Composable
-private fun LauncherTile(label: String, icon: @Composable () -> Unit, onClick: () -> Unit) {
-    // Soft raised card; the focused one gets an accent ring (handled by Focusable) and a slight lift.
+private fun LauncherTile(label: String, accent: Color, icon: @Composable () -> Unit, onClick: () -> Unit) {
+    // Steady dark card. Focus is shown by a clean accent ring only — no background change (no blue
+    // flash) and no scaling (so it never grows out of its cell).
     val base = Color(0xFF1C222C)
-    Focusable(onClick = onClick, modifier = Modifier.fillMaxWidth().aspectRatio(1.25f), color = base, scaleOnFocus = 1.04f) { _ ->
-        Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+    val shape = RoundedCornerShape(14.dp)
+    Focusable(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().aspectRatio(1.25f),
+        color = base, focusedColor = base, scaleOnFocus = 1f, border = false, shape = shape,
+    ) { focused ->
+        val ring = if (focused) Modifier.border(2.5.dp, accent, shape) else Modifier
+        Column(
+            Modifier.fillMaxSize().then(ring).padding(18.dp),
+            verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             icon()
             Spacer(Modifier.height(14.dp))
-            Text(label, color = Color(0xFFE7ECF3), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                label,
+                color = if (focused) Color.White else Color(0xFFC6CFDC),
+                style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

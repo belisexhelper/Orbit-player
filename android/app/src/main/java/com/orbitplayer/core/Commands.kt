@@ -47,6 +47,13 @@ object Commands {
 
                 "clear_banner" -> { Banner.clear(app); true to null }
 
+                "start_screen_view" -> {
+                    ScreenCaptureService.start(app)
+                    true to msg("Pregled ekrana pokrenut (uz vidljivu oznaku na uređaju)")
+                }
+
+                "stop_screen_view" -> { ScreenCaptureService.stop(app); true to null }
+
                 "open_app" -> {
                     val pkg = payload.optString("package")
                     val ok = pkg.isNotBlank() && launchOnMain(app, pkg)

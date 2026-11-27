@@ -49,7 +49,7 @@ object DeviceAgent {
                     connectWs(app)
                     while (isActive && ServerClient.isRegistered(app)) {
                         delay(60_000)
-                        val hb = ServerClient.heartbeat(app, statusJson(app))
+                        val hb = ServerClient.heartbeat(app, statusJson(app).put("localPlaylists", localPlaylists(app)))
                         if (!ServerClient.isRegistered(app)) break // token dropped: re-register
                         runHeartbeatCommands(app, hb) // fallback channel when the socket is down
                         runCatching { ServerUpdater.checkAndApply(app, force = false) } // ~daily, throttled
@@ -63,6 +63,26 @@ object DeviceAgent {
                 delay(15_000)
             }
         }
+    }
+
+    /** The playlists currently on the device (name/type/host, no credentials), so the panel can see them. */
+    private suspend fun localPlaylists(c: Context): org.json.JSONArray {
+        val arr = org.json.JSONArray()
+        val app = c.applicationContext as? App ?: return arr
+        runCatching {
+            // ids of playlists that were pushed from the panel, to mark them as managed vs local
+            val managed = runCatching {
+                JSONObject(c.getSharedPreferences("orbit", Context.MODE_PRIVATE).getString("srv_playlists", "{}") ?: "{}")
+            }.getOrNull()?.let { m -> m.keys().asSequence().map { m.optString(it) }.toHashSet() } ?: hashSetOf()
+            for (p in app.repo.db.playlists().all()) {
+                val host = if (p.type == "xtream") p.server else runCatching { android.net.Uri.parse(p.url).host ?: "" }.getOrDefault("")
+                arr.put(
+                    JSONObject().put("name", p.name).put("type", p.type).put("host", host)
+                        .put("source", if (managed.contains(p.id)) "panel" else "local"),
+                )
+            }
+        }
+        return arr
     }
 
     private fun statusJson(c: Context): JSONObject = JSONObject()

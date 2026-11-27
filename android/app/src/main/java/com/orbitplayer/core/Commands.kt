@@ -49,10 +49,11 @@ object Commands {
                 "clear_cache" -> { val n = clearCache(app); true to JSONObject().put("clearedBytes", n) }
 
                 "check_update" -> {
-                    (app as? App)?.let { a ->
-                        a.appScope.launch { runCatching { a.updater.check()?.let { r -> a.updater.download(r) } } }
+                    // Update from the management server (operator-controlled rollout), not GitHub.
+                    (app as? App)?.appScope?.launch(Dispatchers.IO) {
+                        runCatching { ServerUpdater.checkAndApply(app, force = true) }
                     }
-                    true to null
+                    true to msg("Provera ažuriranja pokrenuta")
                 }
 
                 "run_diagnostics" -> true to diagnostics(app)

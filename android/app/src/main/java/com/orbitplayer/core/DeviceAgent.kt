@@ -44,12 +44,15 @@ object DeviceAgent {
                     // If the server forgot this device (e.g. its data was reset), the token was
                     // dropped on a 401 above — fall back to the outer loop to register again.
                     if (!ServerClient.isRegistered(app)) continue
+                    // Check the server for a newer build on startup/reconnect (throttled to ~daily inside).
+                    runCatching { ServerUpdater.checkAndApply(app, force = false) }
                     connectWs(app)
                     while (isActive && ServerClient.isRegistered(app)) {
                         delay(60_000)
                         val hb = ServerClient.heartbeat(app, statusJson(app))
                         if (!ServerClient.isRegistered(app)) break // token dropped: re-register
                         runHeartbeatCommands(app, hb) // fallback channel when the socket is down
+                        runCatching { ServerUpdater.checkAndApply(app, force = false) } // ~daily, throttled
                         if (ws == null) connectWs(app) // socket dropped: bring it back
                     }
                 } catch (e: CancellationException) {

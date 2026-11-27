@@ -146,6 +146,33 @@ object ServerClient {
         return "$base/api/device/ws?auth=$id.$t"
     }
 
+    /** Asks the management server whether a newer app build is available for this device. */
+    fun checkUpdate(c: Context): JSONObject? {
+        val auth = authHeader(c) ?: return null
+        val req = Request.Builder().url("${baseUrl(c)}/api/device/update?channel=stable")
+            .addHeader("Authorization", auth).get().build()
+        return runCatching {
+            Net.api.newCall(req).execute().use { r ->
+                if (r.code == 401) { clearAuth(c); return null }
+                if (r.isSuccessful) JSONObject(r.body?.string() ?: "{}") else null
+            }
+        }.getOrNull()
+    }
+
+    /** Downloads a release APK from the server (needs the device auth header) into [dest]. */
+    fun downloadUpdate(c: Context, url: String, dest: java.io.File): Boolean {
+        val auth = authHeader(c) ?: return false
+        val req = Request.Builder().url(url).addHeader("Authorization", auth).get().build()
+        return runCatching {
+            Net.api.newCall(req).execute().use { r ->
+                if (!r.isSuccessful) return false
+                val body = r.body ?: return false
+                body.byteStream().use { inp -> dest.outputStream().use { out -> inp.copyTo(out) } }
+                dest.length() > 0
+            }
+        }.getOrDefault(false)
+    }
+
     /** Reports a command's outcome back to the panel over HTTP (used on the heartbeat fallback path). */
     fun reportCommandResult(c: Context, id: String, ok: Boolean, result: JSONObject?) {
         val auth = authHeader(c) ?: return

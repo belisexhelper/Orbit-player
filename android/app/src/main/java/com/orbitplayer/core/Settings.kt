@@ -49,6 +49,12 @@ data class AppSettings(
     val autoUpdateCheck: Boolean = true,
     val confirmExit: Boolean = true,
     val kioskMode: Boolean = false, // lock the device to the launcher (full lock on enrolled devices)
+    // Which sections are shown (controlled from the panel)
+    val showLive: Boolean = true,
+    val showMovies: Boolean = true,
+    val showSeries: Boolean = true,
+    val showDownloads: Boolean = true,
+    val showSpeedtest: Boolean = true,
 ) {
     /** Movies & series: how far ahead the player loads */
     val vodBufferMs: Int
@@ -80,6 +86,7 @@ data class AppSettings(
         .put("parentalPin", parentalPin).put("hideAdult", hideAdult).put("adultKeywords", adultKeywords)
         .put("playlistRefreshHours", playlistRefreshHours).put("epgRefreshHours", epgRefreshHours).put("epgKeepPastDays", epgPastDays)
         .put("playLastChannelOnStart", startOnLastChannel).put("autostartOnBoot", autostartOnBoot).put("confirmExit", confirmExit).put("kioskMode", kioskMode).put("autoUpdateCheck", autoUpdateCheck)
+        .put("showLive", showLive).put("showMovies", showMovies).put("showSeries", showSeries).put("showDownloads", showDownloads).put("showSpeedtest", showSpeedtest)
 
     companion object {
         fun fromJson(o: JSONObject, defaults: AppSettings = AppSettings()): AppSettings = defaults.copy(
@@ -117,6 +124,47 @@ data class AppSettings(
             confirmExit = o.optBoolean("confirmExit", defaults.confirmExit),
             kioskMode = o.optBoolean("kioskMode", defaults.kioskMode),
             autoUpdateCheck = o.optBoolean("autoUpdateCheck", defaults.autoUpdateCheck),
+            showLive = o.optBoolean("showLive", defaults.showLive),
+            showMovies = o.optBoolean("showMovies", defaults.showMovies),
+            showSeries = o.optBoolean("showSeries", defaults.showSeries),
+            showDownloads = o.optBoolean("showDownloads", defaults.showDownloads),
+            showSpeedtest = o.optBoolean("showSpeedtest", defaults.showSpeedtest),
+        )
+    }
+
+    /** Merges settings pushed from the panel (nested shape: ui/player/subtitles/parental/data/app). */
+    fun withServerSettings(s: JSONObject): AppSettings {
+        val ui = s.optJSONObject("ui")
+        val player = s.optJSONObject("player")
+        val subs = s.optJSONObject("subtitles")
+        val parental = s.optJSONObject("parental")
+        val data = s.optJSONObject("data")
+        val app = s.optJSONObject("app")
+        fun themeMap(v: String?) = when (v) { "light" -> "light"; "dark" -> if (theme == "oled") "oled" else "slate"; else -> theme }
+        fun aspectMap(v: String?) = when (v) { "fit", "fill", "zoom" -> v; else -> aspect }
+        return copy(
+            theme = themeMap(ui?.optString("theme")),
+            showLive = ui?.optBoolean("showLive", showLive) ?: showLive,
+            showMovies = ui?.optBoolean("showMovies", showMovies) ?: showMovies,
+            showSeries = ui?.optBoolean("showSeries", showSeries) ?: showSeries,
+            showDownloads = ui?.optBoolean("showDownloads", showDownloads) ?: showDownloads,
+            showSpeedtest = ui?.optBoolean("showSpeedtest", showSpeedtest) ?: showSpeedtest,
+            playerEngine = player?.optString("engine")?.takeIf { it in listOf("exo", "vlc", "auto") } ?: playerEngine,
+            hardwareDecoding = player?.optBoolean("hardwareDecoding", hardwareDecoding) ?: hardwareDecoding,
+            autoReconnect = player?.optBoolean("autoReconnect", autoReconnect) ?: autoReconnect,
+            aspect = aspectMap(player?.optString("aspect")),
+            subtitlesByDefault = subs?.optBoolean("enabledByDefault", subtitlesByDefault) ?: subtitlesByDefault,
+            subtitleLanguage = subs?.optString("preferredLanguage")?.takeIf { it.isNotBlank() } ?: subtitleLanguage,
+            subtitleSize = subs?.optString("size")?.takeIf { it in listOf("small", "normal", "large") } ?: subtitleSize,
+            subtitleBackground = subs?.optBoolean("background", subtitleBackground) ?: subtitleBackground,
+            parentalPin = parental?.optString("pin") ?: parentalPin,
+            hideAdult = parental?.optBoolean("hideAdultGroups", hideAdult) ?: hideAdult,
+            adultKeywords = parental?.optString("adultKeywords")?.takeIf { it.isNotBlank() } ?: adultKeywords,
+            playlistRefreshHours = data?.optInt("playlistRefreshHours", playlistRefreshHours)?.coerceIn(1, 24 * 14) ?: playlistRefreshHours,
+            epgRefreshHours = data?.optInt("epgRefreshHours", epgRefreshHours)?.coerceIn(1, 24 * 7) ?: epgRefreshHours,
+            epgPastDays = data?.optInt("epgDaysBack", epgPastDays)?.coerceIn(0, 14) ?: epgPastDays,
+            autostartOnBoot = app?.optBoolean("autostartOnBoot", autostartOnBoot) ?: autostartOnBoot,
+            startOnLastChannel = app?.optString("startScreen")?.let { it == "last_channel" } ?: startOnLastChannel,
         )
     }
 }
@@ -136,6 +184,9 @@ class Store(context: Context) {
         _settings.value = next
         sp.edit().putString("settings", next.toJson().toString()).apply()
     }
+
+    /** Applies settings pushed from the management panel. */
+    fun applyServerSettings(s: JSONObject) = update { it.withServerSettings(s) }
 
     fun replaceAll(s: AppSettings) = update { s }
 

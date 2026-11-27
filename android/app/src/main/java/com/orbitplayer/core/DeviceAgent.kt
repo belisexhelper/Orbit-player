@@ -151,6 +151,8 @@ object DeviceAgent {
     private suspend fun applyConfig(c: Context, cfg: JSONObject?) {
         cfg ?: return
         Launcher.applyServerConfig(c, cfg.optJSONObject("launcher"))
+        // App settings pushed from the panel (theme, player, subtitles, which sections show, …).
+        cfg.optJSONObject("settings")?.let { runCatching { (c.applicationContext as? App)?.store?.applyServerSettings(it) } }
         // Playlists pushed from the panel (via the 9-digit connect / the user's profile).
         val app = c.applicationContext as? App ?: return
         val changed = runCatching { app.repo.applyServerPlaylists(cfg.optJSONArray("playlists")) }.getOrDefault(false)

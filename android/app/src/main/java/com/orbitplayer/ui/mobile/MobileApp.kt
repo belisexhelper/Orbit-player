@@ -122,6 +122,16 @@ private val TABS = listOf(
 @Composable
 fun MobileApp(vm: AppViewModel, onExit: () -> Unit) {
     val playerOpen by vm.playerOpen.collectAsState()
+    val settings by vm.settings.collectAsState()
+    // sections the panel turned off are hidden from the bottom bar
+    val tabs = TABS.filter {
+        when (it.route) {
+            Route.Live -> settings.showLive
+            Route.Movies -> settings.showMovies
+            Route.Series -> settings.showSeries
+            else -> true
+        }
+    }
     var lastBack by remember { mutableLongStateOf(0L) }
     BackHandler(enabled = !playerOpen) {
         when {
@@ -161,7 +171,7 @@ fun MobileApp(vm: AppViewModel, onExit: () -> Unit) {
             Row(Modifier.fillMaxSize().safeDrawingPadding()) {
                 NavigationRail(containerColor = Orbit.colors.surface) {
                     Spacer(Modifier.height(12.dp))
-                    TABS.forEach { t ->
+                    tabs.forEach { t ->
                         NavigationRailItem(
                             selected = selectedTab == t.route,
                             onClick = { vm.root(t.route) },
@@ -178,7 +188,7 @@ fun MobileApp(vm: AppViewModel, onExit: () -> Unit) {
                 Box(Modifier.weight(1f)) { MobileContent(vm, wide = false) }
                 if (vm.route !is Route.ChannelView) {
                     NavigationBar(containerColor = Orbit.colors.surface, tonalElevation = 0.dp) {
-                        TABS.forEach { t ->
+                        tabs.forEach { t ->
                             NavigationBarItem(
                                 selected = selectedTab == t.route,
                                 onClick = { vm.root(t.route) },

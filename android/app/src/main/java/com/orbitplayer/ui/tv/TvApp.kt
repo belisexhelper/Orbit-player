@@ -321,8 +321,17 @@ fun TvApp(vm: AppViewModel, onExit: () -> Unit) {
             }
             // the menu's focus target must always exist (screens without their own item, e.g. Add playlist:
             // Live TV), else returning focus to the app (keyboard closed) or Left would crash
-            val railTarget = RAIL.firstOrNull { it.route == section } ?: RAIL.firstOrNull { it.route == Route.Live } ?: RAIL.first()
-            RAIL.forEach { item ->
+            // sections the panel turned off are hidden from the menu
+            val rail = RAIL.filter {
+                when (it.route) {
+                    Route.Live -> settings.showLive
+                    Route.Movies -> settings.showMovies
+                    Route.Series -> settings.showSeries
+                    else -> true
+                }
+            }
+            val railTarget = rail.firstOrNull { it.route == section } ?: rail.firstOrNull { it.route == Route.Live } ?: rail.first()
+            rail.forEach { item ->
                 val active = item.route == section
                 Focusable(
                     onClick = {

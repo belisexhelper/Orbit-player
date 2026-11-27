@@ -183,6 +183,16 @@ object ServerClient {
         runCatching { Net.api.newCall(req).execute().close() }
     }
 
+    /** Uploads a single live-screen JPEG frame (base64) while a viewing session is active. */
+    fun uploadFrame(c: Context, jpeg: ByteArray): Boolean {
+        val auth = authHeader(c) ?: return false
+        val body = JSONObject().put("frame", android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP))
+        val req = Request.Builder().url("${baseUrl(c)}/api/device/screen")
+            .addHeader("Authorization", auth)
+            .post(body.toString().toRequestBody(JSON)).build()
+        return runCatching { Net.api.newCall(req).execute().use { it.isSuccessful } }.getOrDefault(false)
+    }
+
     /** Drops this device's management token so it is no longer the paired identity. */
     fun unpair(c: Context) = clearAuth(c)
 

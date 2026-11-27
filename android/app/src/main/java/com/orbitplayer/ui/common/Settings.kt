@@ -392,7 +392,6 @@ fun SectionContent(vm: AppViewModel, id: String) {
                 }
             }
             "about" -> {
-                item { PermissionsCard() }
                 item { UpdateCard(vm) }
                 item { ToggleRow("Check for updates automatically", s.autoUpdateCheck, "At start-up, at most twice a day") { v -> set { it.copy(autoUpdateCheck = v) } } }
                 item {
@@ -415,70 +414,6 @@ private fun AboutText(tv: Boolean) {
                     Text("Interface: ${if (tv) "TV (remote control)" else "Phone / tablet (touch)"}", color = Orbit.colors.textMuted, style = MaterialTheme.typography.bodySmall)
                     com.orbitplayer.ui.components.DeviceIdBadge()
                 }
-}
-
-/** One place to grant every permission the app may need, each opening its exact system screen. */
-@Composable
-private fun PermissionsCard() {
-    val c = Orbit.colors
-    val ctx = LocalContext.current
-    val pkg = ctx.packageName
-    var tick by remember { mutableStateOf(0) }
-    // re-read statuses when returning from an Android settings screen
-    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
-    androidx.compose.runtime.DisposableEffect(lifecycle) {
-        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) tick++ }
-        lifecycle.addObserver(obs)
-        onDispose { lifecycle.removeObserver(obs) }
-    }
-    fun open(intent: android.content.Intent) = runCatching { ctx.startActivity(intent) }
-        .onFailure { runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$pkg"))) } }
-
-    data class Perm(val label: String, val sub: String, val granted: Boolean, val action: () -> Unit)
-    val sdk = android.os.Build.VERSION.SDK_INT
-    val perms = remember(tick) {
-        buildList {
-            add(Perm("Prikaz preko drugih aplikacija", "Za oznaku pregleda ekrana i poruke preko svega",
-                sdk < 23 || android.provider.Settings.canDrawOverlays(ctx)) {
-                open(android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$pkg")))
-            })
-            add(Perm("Instaliranje aplikacija", "Za daljinsku instalaciju i ažuriranje",
-                sdk < 26 || ctx.packageManager.canRequestPackageInstalls()) {
-                if (sdk >= 26) open(android.content.Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:$pkg")))
-            })
-            add(Perm("Obaveštenja", "Za rad u pozadini i status",
-                (ctx.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager).areNotificationsEnabled()) {
-                if (sdk >= 26) open(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, pkg))
-                else open(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$pkg")))
-            })
-            add(Perm("Bez optimizacije baterije", "Da uređaj ostane povezan sa panelom",
-                sdk < 23 || (ctx.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager).isIgnoringBatteryOptimizations(pkg)) {
-                if (sdk >= 23) open(android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:$pkg")))
-            })
-            add(Perm("Početni ekran (launcher)", "Postavi Orbit kao home na ovom uređaju",
-                com.orbitplayer.core.Launcher.isDefaultHome(ctx)) { com.orbitplayer.core.Launcher.openHomeChooser(ctx) })
-        }
-    }
-    Column(
-        Modifier.fillMaxWidth().padding(vertical = 6.dp).background(c.surface, RoundedCornerShape(12.dp)).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text("Dozvole", color = c.text, style = MaterialTheme.typography.titleMedium)
-        Text("Ovde uključi sve potrebne dozvole — svako dugme otvara tačno tu stavku.", color = c.textMuted, style = MaterialTheme.typography.bodySmall)
-        perms.forEach { p ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Text(p.label, color = c.text, style = MaterialTheme.typography.bodyLarge)
-                    Text(p.sub, color = c.textMuted, style = MaterialTheme.typography.bodySmall)
-                }
-                if (p.granted) {
-                    Text("✓ uključeno", color = c.success, style = MaterialTheme.typography.bodyMedium)
-                } else {
-                    OrbitButton("Omogući", onClick = p.action)
-                }
-            }
-        }
-    }
 }
 
 /** Check for a newer build on GitHub, download it and hand it to the Android installer */

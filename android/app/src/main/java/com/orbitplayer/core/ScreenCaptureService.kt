@@ -55,12 +55,10 @@ class ScreenCaptureService : Service() {
         val data = intent?.getParcelableExtra<Intent>("resultData")
         if (code == 0 || data == null) { stopAll(); return START_NOT_STICKY }
 
-        // The indicator must be visible; if we can't show it, we do not capture.
-        if (!showIndicator()) {
-            AppLog.w("Screen view: cannot show the on-screen indicator — not capturing")
-            stopAll()
-            return START_NOT_STICKY
-        }
+        // Always show an on-screen indicator. The overlay is the strongest form, but even if the
+        // overlay permission is missing, Android itself shows an un-hideable screen-capture indicator
+        // while MediaProjection is active — so viewing is never silent.
+        if (!showIndicator()) AppLog.w("Screen view: overlay indicator unavailable; relying on the system capture indicator")
 
         val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         projection = runCatching { mpm.getMediaProjection(code, data) }.getOrNull()
